@@ -1,0 +1,44 @@
+# CODEOWNERS — auto-requests review from the right person based on which
+# layer changed, matching the team table in README.md. Only takes effect
+# once "Require review from Code Owners" is enabled on the main branch
+# ruleset (Settings > Rules > Rulesets).
+#
+# Roles not yet staffed with a named team member default to @aganrandave
+# (EM/PM) until real GitHub usernames are assigned — update here and in
+# README.md's team table together when that happens.
+
+# Default owner for anything not matched below
+*                           @aganrandave
+
+# Producer, pipeline, and alerts are all streaming/Kafka-adjacent data
+# engineering work, owned by the Data Engineer.
+/producer/                 @john-babalola1307
+/pipeline/                 @john-babalola1307
+/alerts/                   @john-babalola1307
+
+# Model training (XGBoost + Isolation Forest) owned by the AI Trainer.
+/models/                   @bolanle-ea
+
+# Scoring service (model blending, evaluation-adjacent logic) owned by the
+# Data Scientist.
+/scoring/                  @Oluwatiseunla
+
+# Unstaffed roles default to EM/PM.
+/dashboard/                @aganrandave
+/infra/                    @aganrandave
+/tests/                    @aganrandave
+/docs/                     @aganrandave
+
+# Data files require sign-off from both the infra owner (storage pattern)
+# and whichever layer produces them.
+/data/transactions_raw.xlsx    @aganrandave @john-babalola1307
+/data/features.xlsx            @aganrandave @john-babalola1307
+/data/fraud_scores.xlsx        @aganrandave @Oluwatiseunla
+/data/alerts.xlsx              @aganrandave @john-babalola1307
+/data/reference/                @aganrandave @john-babalola1307
+
+# CI/CD and repo-wide config changes always require the infra owner
+/.github/                  @aganrandave
+/docker-compose.yml        @aganrandave
+/.gitattributes            @aganrandave
+/.gitignore                @aganrandave
