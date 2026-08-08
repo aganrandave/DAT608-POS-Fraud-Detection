@@ -1,0 +1,75 @@
+# DAT608 — POS Agent Fraud Detection
+
+A real-time fraud detection system for Nigerian point-of-sale (POS) agent
+transactions. Synthetic transactions are streamed through Kafka, enriched
+with rolling features in Spark Structured Streaming, scored by an ensemble
+of XGBoost and Isolation Forest models tracked in MLflow, and surfaced as
+tiered alerts through ksqlDB and a Streamlit dashboard. The project is a
+DAT608 Big Data capstone at Pan-Atlantic University.
+
+## Team
+
+| Name | Role | GitHub username | Pipeline layer |
+|------|------|------------------|-----------------|
+|      | Data Generation Lead |  | producer |
+|      | Streaming Engineer |  | pipeline |
+|      | ML Engineer |  | models |
+|      | API Engineer |  | scoring |
+|      | Alerting Engineer |  | alerts |
+|      | Dashboard Engineer |  | dashboard |
+|      | Infra / DevOps |  | infra |
+|      | QA / Test Lead |  | tests |
+
+## Architecture overview
+
+```
+ +-------------+     +-------+     +----------------+     +---------------------+
+ | Transaction | --> | Kafka | --> | Spark Structured| --> | Feature Store       |
+ | Generator   |     | Topic |     | Streaming        |     | (data/features.xlsx)|
+ +-------------+     +-------+     +----------------+     +----------+----------+
+                                                                       |
+                                                                       v
+                                                          +------------------------+
+                                                          | XGBoost + Isolation    |
+                                                          | Forest (MLflow logged) |
+                                                          +-----------+------------+
+                                                                       |
+                                                                       v
++--------------+     +------------+     +----------+     +------------------------+
+| Streamlit    | <-- |  Alerts    | <-- | ksqlDB   | <-- | FastAPI Scoring Service|
+| Dashboard    |     | (alerts.   |     | Alert    |     | (data/fraud_scores.xlsx)|
+|              |     |  xlsx)     |     | Logic    |     |                        |
++--------------+     +------------+     +----------+     +------------------------+
+```
+
+All services are orchestrated with Docker Compose — see [infra/README.md](infra/README.md).
+
+## Quickstart
+
+```bash
+git clone https://github.com/oluwaseun-aganran/DAT608-POS-Fraud-Detection.git
+cd DAT608-POS-Fraud-Detection
+cp .env.example .env
+docker-compose up --build
+```
+
+The Streamlit dashboard will be available at `http://localhost:8501` and the
+FastAPI scoring service at `http://localhost:8000/docs`.
+
+## Data store
+
+This project uses **Excel files instead of a live database**. Every
+persistent record — raw transactions, engineered features, model scores,
+and alerts — lives under [`data/`](data/) as a tracked `.xlsx` file
+(`data/transactions_raw.xlsx`, `data/features.xlsx`, `data/fraud_scores.xlsx`,
+`data/alerts.xlsx`, `data/reference/terminals.xlsx`,
+`data/reference/merchants.xlsx`). Because these files are committed to Git,
+every pull request carries its data alongside the code that produced it,
+and reviewers can diff data changes the same way they diff code. Each layer
+reads and writes these files through a shared `openpyxl` + `filelock`
+pattern implemented in that layer's `excel_reader.py` / `excel_writer.py`.
+
+## Documentation
+
+Full technical documentation, including the data dictionary, API reference,
+and alert-tier logic, lives in [docs/architecture.md](docs/architecture.md).

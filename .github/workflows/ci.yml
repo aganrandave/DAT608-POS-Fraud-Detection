@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install lint and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest openpyxl
+
+      - name: Run flake8
+        run: flake8 --max-line-length=120 $(git ls-files '*.py')
+
+      - name: Run pytest on unit tests
+        run: pytest tests/unit/ -v
+
+      - name: Verify Excel data files are present and readable
+        run: |
+          python - <<'PY'
+          import sys
+          import openpyxl
+
+          files = [
+              "data/transactions_raw.xlsx",
+              "data/features.xlsx",
+              "data/fraud_scores.xlsx",
+              "data/alerts.xlsx",
+              "data/reference/terminals.xlsx",
+              "data/reference/merchants.xlsx",
+          ]
+
+          failed = False
+          for path in files:
+              try:
+                  wb = openpyxl.load_workbook(path)
+                  ws = wb.active
+                  rows = ws.max_row
+                  print(f"OK  {path} ({rows} rows)")
+              except Exception as exc:
+                  print(f"FAIL {path}: {exc}")
+                  failed = True
+
+          sys.exit(1 if failed else 0)
+          PY

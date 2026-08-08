@@ -1,0 +1,24 @@
+version: "3.8"
+
+# Development overrides: bind-mount source for hot reload and skip
+# multi-stage build caching. Use with:
+#   docker-compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up
+
+services:
+  producer:
+    volumes:
+      - ../producer:/app
+      - ../data:/app/data
+    command: ["python", "-u", "kafka_producer.py"]
+
+  scoring:
+    volumes:
+      - ../scoring:/app
+      - ../data:/app/data
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  dashboard:
+    volumes:
+      - ../dashboard:/app
+      - ../data:/app/data
+    command: ["streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.runOnSave=true"]
