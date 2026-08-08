@@ -10,18 +10,19 @@ else in this repo.
 
 Covers both `main` and `develop`. Built via the GitHub UI, not via this
 file originally — this file was written to match what's actually
-configured, after the fact. Known gaps against best practice, tracked
-deliberately rather than silently:
+configured, after the fact.
 
-- **`required_signatures` is currently omitted.** It was enabled once,
-  which blocked the very first push to `main` (no team member has commit
-  signing set up yet). Re-add it once SSH/GPG signing is configured for
-  `aganrandave`, `john-babalola1307`, `bolanle-ea`, and `Oluwatiseunla` —
-  see the root README or ask for the setup steps.
-- **`require_code_owner_review` is `false`.** `.github/CODEOWNERS` exists
-  but isn't currently enforced by this ruleset — any approver satisfies
-  the PR gate, not specifically the layer owner. Flip to `true` once the
-  team is comfortable with CODEOWNERS routing.
+- **`required_signatures` is active.** `aganrandave` has SSH commit
+  signing configured; `john-babalola1307`, `bolanle-ea`, `Oluwatiseunla`,
+  and `Ololade-ajaegbu` still need to set theirs up before they can push —
+  see [`docs/commit_signing_setup.md`](../../docs/commit_signing_setup.md).
+  Until then, their pushes to `main`/`develop` (including via PR merge)
+  will be rejected with "Commits must have verified signatures."
+- **`require_code_owner_review` is active.** `.github/CODEOWNERS` is now
+  enforced — PRs need an approval from the specific layer owner(s) listed
+  there, not just any approver. The admin bypass (`bypass_actors`, see
+  below) still lets `aganrandave` merge without waiting on that specific
+  reviewer.
 
 To reapply after editing this file:
 
