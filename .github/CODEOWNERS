@@ -16,8 +16,9 @@
 /pipeline/                 @john-babalola1307
 /alerts/                   @john-babalola1307
 
-# Model training (XGBoost + Isolation Forest) owned by the AI Trainer.
-/models/                   @bolanle-ea
+# Model training (XGBoost + Isolation Forest) owned by the AI Trainer and
+# ML Engineer jointly — either approval satisfies the CODEOWNERS gate.
+/models/                   @bolanle-ea @Ololade-ajaegbu
 
 # Scoring service (model blending, evaluation-adjacent logic) owned by the
 # Data Scientist.
