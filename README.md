@@ -12,10 +12,10 @@ DAT608 Big Data capstone at Pan-Atlantic University.
 | Name | Role | GitHub username | Pipeline layer(s) |
 |------|------|------------------|--------------------|
 | David Aganran | EM/PM | [aganrandave](https://github.com/aganrandave) | infra, dashboard, tests, docs |
-|      | AI Trainer | [bolanle-ea](https://github.com/bolanle-ea) | models |
-|      | ML Engineer | [Ololade-ajaegbu](https://github.com/Ololade-ajaegbu) | models |
-|      | Data Scientist | [Oluwatiseunla](https://github.com/Oluwatiseunla) | scoring |
-|      | Data Engineer | [john-babalola1307](https://github.com/john-babalola1307) | producer, pipeline, alerts |
+| Omobolanle Adegboye     | AI Trainer | [bolanle-ea](https://github.com/bolanle-ea) | models |
+| Ololade Ajaegbu     | ML Engineer | [Ololade-ajaegbu](https://github.com/Ololade-ajaegbu) | models |
+| Oluwatiseunla Abdul     | Data Scientist | [Oluwatiseunla](https://github.com/Oluwatiseunla) | scoring |
+| John Babalola     | Data Engineer | [john-babalola1307](https://github.com/john-babalola1307) | producer, pipeline, alerts |
 
 Unstaffed layers (dashboard, infra, tests, docs) default to the EM/PM until a
 named owner is assigned — see [`.github/CODEOWNERS`](.github/CODEOWNERS) for
