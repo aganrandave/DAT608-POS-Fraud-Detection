@@ -4,6 +4,8 @@ __pycache__/
 venv/
 .venv/
 mlruns/
+mlruns.db
+mlruns.db-journal
 *.egg-info/
 dist/
 build/
