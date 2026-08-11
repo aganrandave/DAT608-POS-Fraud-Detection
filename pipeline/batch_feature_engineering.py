@@ -49,10 +49,12 @@ FEATURE_COLUMNS = [
     "transaction_id",
     "terminal_id",
     "card_bin",
+    "amount_ngn",
     "velocity_1h",
     "geo_jump_km",
     "bin_spend_rate",
     "terminal_reversal_count",
+    "amount_vs_bin_avg_ratio",
     "timestamp",
 ]
 
@@ -140,15 +142,20 @@ def _terminal_reversal_count(df: pd.DataFrame) -> np.ndarray:
 def build_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values("timestamp").reset_index(drop=True)
 
+    bin_spend_rate = _bin_spend_rate(df)
     features = pd.DataFrame(
         {
             "transaction_id": df["transaction_id"],
             "terminal_id": df["terminal_id"],
             "card_bin": df["card_bin"],
+            "amount_ngn": df["amount_ngn"],
             "velocity_1h": _velocity_1h(df),
             "geo_jump_km": _geo_jump_km(df),
-            "bin_spend_rate": _bin_spend_rate(df),
+            "bin_spend_rate": bin_spend_rate,
             "terminal_reversal_count": _terminal_reversal_count(df),
+            # Sharper anomaly signal than amount_ngn or bin_spend_rate alone -
+            # see feature_windows.with_amount_vs_bin_avg_ratio, which this mirrors.
+            "amount_vs_bin_avg_ratio": df["amount_ngn"].astype(float) / bin_spend_rate,
             "timestamp": df["timestamp"],
         }
     )
@@ -167,10 +174,12 @@ def write_features(features: pd.DataFrame, xlsx_path: str = FEATURES_XLSX) -> No
                     row.transaction_id,
                     row.terminal_id,
                     row.card_bin,
+                    row.amount_ngn,
                     row.velocity_1h,
                     row.geo_jump_km,
                     row.bin_spend_rate,
                     row.terminal_reversal_count,
+                    row.amount_vs_bin_avg_ratio,
                     row.timestamp.isoformat(),
                 ]
             )

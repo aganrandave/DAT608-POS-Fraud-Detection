@@ -2,27 +2,39 @@
   "level1": {
     "velocity_1h": {
       "real_mean": 1.0804,
-      "synthetic_mean": 1.2648,
-      "mean_pct_diff": 17.06,
+      "synthetic_mean": 1.2333,
+      "mean_pct_diff": 14.15,
       "flag": "warn"
     },
     "geo_jump_km": {
       "real_mean": 1.653,
-      "synthetic_mean": 0.6778,
-      "mean_pct_diff": 58.99,
+      "synthetic_mean": 0.8813,
+      "mean_pct_diff": 46.69,
       "flag": "fail"
     },
     "bin_spend_rate": {
       "real_mean": 21438.3502,
-      "synthetic_mean": 20625.6039,
-      "mean_pct_diff": 3.79,
+      "synthetic_mean": 21751.2656,
+      "mean_pct_diff": 1.46,
       "flag": "ok"
     },
     "terminal_reversal_count": {
       "real_mean": 0.0145,
-      "synthetic_mean": 0.139,
-      "mean_pct_diff": 858.85,
+      "synthetic_mean": 0.1068,
+      "mean_pct_diff": 636.78,
       "flag": "fail"
+    },
+    "amount_ngn": {
+      "real_mean": 21617.9483,
+      "synthetic_mean": 19124.9231,
+      "mean_pct_diff": 11.53,
+      "flag": "warn"
+    },
+    "amount_vs_bin_avg_ratio": {
+      "real_mean": 1.0045,
+      "synthetic_mean": 0.9918,
+      "mean_pct_diff": 1.27,
+      "flag": "ok"
     }
   },
   "level2_plots": [
@@ -31,22 +43,32 @@
   ],
   "level3a": {
     "velocity_1h": {
-      "ks_statistic": 0.1371,
+      "ks_statistic": 0.1026,
       "p_value": 0.0,
       "aligned": false
     },
     "geo_jump_km": {
-      "ks_statistic": 0.4447,
+      "ks_statistic": 0.2115,
       "p_value": 0.0,
       "aligned": false
     },
     "bin_spend_rate": {
-      "ks_statistic": 0.0562,
+      "ks_statistic": 0.0442,
       "p_value": 0.0,
       "aligned": false
     },
     "terminal_reversal_count": {
-      "ks_statistic": 0.1217,
+      "ks_statistic": 0.0899,
+      "p_value": 0.0,
+      "aligned": false
+    },
+    "amount_ngn": {
+      "ks_statistic": 0.0559,
+      "p_value": 0.0,
+      "aligned": false
+    },
+    "amount_vs_bin_avg_ratio": {
+      "ks_statistic": 0.0363,
       "p_value": 0.0,
       "aligned": false
     }
@@ -64,42 +86,52 @@
   },
   "level3c": {
     "velocity_1h": {
-      "raw_distance": 0.1843,
-      "normalized_score": 0.4862,
+      "raw_distance": 0.1529,
+      "normalized_score": 0.4032,
       "rating": "poor"
     },
     "geo_jump_km": {
-      "raw_distance": 0.9858,
-      "normalized_score": 0.0593,
-      "rating": "acceptable"
+      "raw_distance": 0.7752,
+      "normalized_score": 0.0466,
+      "rating": "excellent"
     },
     "bin_spend_rate": {
-      "raw_distance": 1479.6176,
-      "normalized_score": 0.0798,
-      "rating": "acceptable"
+      "raw_distance": 887.8314,
+      "normalized_score": 0.0479,
+      "rating": "excellent"
     },
     "terminal_reversal_count": {
-      "raw_distance": 0.1245,
-      "normalized_score": 1.0368,
+      "raw_distance": 0.0923,
+      "normalized_score": 0.7687,
       "rating": "poor"
+    },
+    "amount_ngn": {
+      "raw_distance": 2680.7744,
+      "normalized_score": 0.0726,
+      "rating": "acceptable"
+    },
+    "amount_vs_bin_avg_ratio": {
+      "raw_distance": 0.0487,
+      "normalized_score": 0.0473,
+      "rating": "excellent"
     }
   },
   "level4": {
-    "trtr_auc": 0.9264,
-    "tstr_auc": 0.9113,
-    "auc_gap": 0.0151,
+    "trtr_auc": 0.9517,
+    "tstr_auc": 0.9358,
+    "auc_gap": 0.0159,
     "verdict": "fully_equivalent",
     "real_test_fraud_rate": 0.0382
   },
   "level5": {
-    "median_d_sr": 0.0004,
-    "median_d_rr": 0.0,
-    "dnnr": 12.043,
+    "median_d_sr": 0.0969,
+    "median_d_rr": 0.0072,
+    "dnnr": 13.4263,
     "interpretation": "privacy_preserved"
   },
   "approved_for_training": false,
   "gate_failure_reasons": [
-    "Level 3a: only 0/4 numeric columns pass KS (all required)",
-    "Level 3c: only 2/4 numeric columns rated acceptable/excellent (all required)"
+    "Level 3a: only 0/6 numeric columns pass KS (all required)",
+    "Level 3c: only 4/6 numeric columns rated acceptable/excellent (all required)"
   ]
 }

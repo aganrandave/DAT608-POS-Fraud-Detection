@@ -30,10 +30,12 @@ FEATURE_SCHEMA = StructType(
         StructField("transaction_id", StringType(), False),
         StructField("terminal_id", StringType(), False),
         StructField("card_bin", StringType(), False),
+        StructField("amount_ngn", DoubleType(), False),
         StructField("velocity_1h", DoubleType(), True),
         StructField("geo_jump_km", DoubleType(), True),
         StructField("bin_spend_rate", DoubleType(), True),
         StructField("terminal_reversal_count", DoubleType(), True),
+        StructField("amount_vs_bin_avg_ratio", DoubleType(), True),
         StructField("timestamp", TimestampType(), False),
     ]
 )

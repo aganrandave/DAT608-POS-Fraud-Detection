@@ -5,9 +5,18 @@ producer/bulk_generate.py + pipeline/batch_feature_engineering.py,
 SCRUM-20/23), ~3.8% fraud, after fixing real weaknesses in the transaction
 generator (terminal-location pinning, realistic timestamp spread,
 velocity/geo fraud bursts - see transaction_generator.py/fraud_scenarios.py
-docstrings). Isolation Forest is fit on non-fraud rows only. Anomaly score
-vs is_fraud correlation: -0.50, precision@1146 (top-scoring anomalies):
-0.50 - a real, usable lift over the ~3.8% base rate.
+docstrings). Isolation Forest is fit on non-fraud rows only.
+
+Honesty note: adding amount_ngn/amount_vs_bin_avg_ratio (which meaningfully
+improved the supervised XGBoost model - see train_xgboost.py) made this
+unsupervised model slightly WORSE: anomaly-score/is_fraud correlation
+-0.50->-0.44, precision@1146 0.50->0.42. Extra feature dimensions aren't
+free for Isolation Forest the way they are for a supervised model - added
+variance in normal transactions' amount can dilute the relative isolation
+of fraud points rather than sharpen it. Left as-is rather than reverting,
+since the feature set is shared with train_xgboost.py via
+excel_reader.FEATURE_COLUMNS and the supervised model is the primary
+classifier; worth revisiting if Isolation Forest becomes the priority.
 
 A CTGAN-based synthetic augmentation of this data was evaluated
 (models/synthetic_augmentation.py + validate_synthetic_features.py). ML
@@ -28,15 +37,8 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from sklearn.ensemble import IsolationForest  # noqa: E402
 
-from excel_reader import load_augmented_training_frame  # noqa: E402
+from excel_reader import FEATURE_COLUMNS, load_augmented_training_frame  # noqa: E402
 from mlflow_registry import EXPERIMENT_NAME, MODEL_NAME_ISOLATION_FOREST, register_model  # noqa: E402
-
-FEATURE_COLUMNS = [
-    "velocity_1h",
-    "geo_jump_km",
-    "bin_spend_rate",
-    "terminal_reversal_count",
-]
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "eda_output")
 

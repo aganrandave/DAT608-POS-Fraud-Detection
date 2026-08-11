@@ -33,14 +33,7 @@ from sdv.metadata import SingleTableMetadata
 from sdv.sampling import Condition
 from sdv.single_table import CTGANSynthesizer
 
-from excel_reader import load_training_frame
-
-FEATURE_COLUMNS = [
-    "velocity_1h",
-    "geo_jump_km",
-    "bin_spend_rate",
-    "terminal_reversal_count",
-]
+from excel_reader import FEATURE_COLUMNS, load_training_frame
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "synthetic_output")
 SYNTHETIC_CSV_PATH = os.path.join(OUTPUT_DIR, "synthetic_features.csv")

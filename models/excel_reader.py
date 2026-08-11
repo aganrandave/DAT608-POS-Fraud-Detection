@@ -13,6 +13,19 @@ from filelock import FileLock
 FEATURES_XLSX = "data/features.xlsx"
 TRANSACTIONS_XLSX = "data/transactions_raw.xlsx"
 
+# Single source of truth for the modeling feature set - train_xgboost.py,
+# train_isolation_forest.py, and synthetic_augmentation.py all import this
+# rather than redefining it, so the three stay in sync. Matches the columns
+# produced by pipeline/feature_windows.py / batch_feature_engineering.py.
+FEATURE_COLUMNS = [
+    "velocity_1h",
+    "geo_jump_km",
+    "bin_spend_rate",
+    "terminal_reversal_count",
+    "amount_ngn",
+    "amount_vs_bin_avg_ratio",
+]
+
 SYNTHETIC_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "synthetic_output")
 SYNTHETIC_FEATURES_CSV = os.path.join(SYNTHETIC_OUTPUT_DIR, "synthetic_features.csv")
 SYNTHETIC_VALIDATION_RESULTS = os.path.join(SYNTHETIC_OUTPUT_DIR, "validation_results.json")
@@ -91,12 +104,9 @@ def load_augmented_training_frame(
                 "transaction_id": None,
                 "terminal_id": None,
                 "card_bin": None,
-                "velocity_1h": float(row["velocity_1h"]),
-                "geo_jump_km": float(row["geo_jump_km"]),
-                "bin_spend_rate": float(row["bin_spend_rate"]),
-                "terminal_reversal_count": float(row["terminal_reversal_count"]),
                 "timestamp": None,
                 "is_fraud": bool(int(row["is_fraud"])),
+                **{col: float(row[col]) for col in FEATURE_COLUMNS},
             }
             for row in csv.DictReader(f)
         ]

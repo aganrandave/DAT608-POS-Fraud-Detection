@@ -13,10 +13,12 @@ COLUMNS = [
     "transaction_id",
     "terminal_id",
     "card_bin",
+    "amount_ngn",
     "velocity_1h",
     "geo_jump_km",
     "bin_spend_rate",
     "terminal_reversal_count",
+    "amount_vs_bin_avg_ratio",
     "timestamp",
 ]
 
