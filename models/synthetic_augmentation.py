@@ -13,7 +13,13 @@ the minority class can be validated as safe to add on top of that.
 
 Conditional sampling on is_fraud is used from the start (the DAT610
 exercise found unconditional sampling badly inflates the synthetic fraud
-rate - no need to repeat that mistake here).
+rate - no need to repeat that mistake here). velocity_1h and
+terminal_reversal_count are explicitly overridden to categorical sdtype
+(see CATEGORICAL_OVERRIDE_COLUMNS below) - both are low-cardinality
+integer counts that CTGAN's default "numerical" mode-specific
+normalisation modelled poorly, which was the diagnosed root cause of the
+validation gate's persistent KS/Wasserstein failures on exactly those two
+columns across every prior run of this pipeline.
 
 Deliberately does NOT fabricate transaction_id/terminal_id/card_bin/
 timestamp identifier columns, and does NOT write synthetic rows into
@@ -50,11 +56,31 @@ def load_real_data() -> pd.DataFrame:
     return df
 
 
+# Columns auto-detected as "numerical" that are actually low-cardinality
+# integer counts (velocity_1h: 6 distinct values, 94% at the minimum;
+# terminal_reversal_count: 3 distinct values, 98.5% at zero). CTGAN models
+# "numerical" columns via mode-specific Gaussian-mixture normalisation,
+# which is a poor fit for a near-constant spike distribution - this was
+# the diagnosed root cause of validate_synthetic_features.py's KS/
+# Wasserstein failures on exactly these two columns. Overriding them to
+# "categorical" lets CTGAN model each observed integer as its own class.
+CATEGORICAL_OVERRIDE_COLUMNS = ["velocity_1h", "terminal_reversal_count"]
+
+
 def detect_metadata(real_df: pd.DataFrame) -> SingleTableMetadata:
     metadata = SingleTableMetadata()
     metadata.detect_from_dataframe(real_df)
-    print("Detected metadata:")
+    print("Auto-detected metadata:")
     print(json.dumps(metadata.to_dict(), indent=2))
+
+    # The lecture's own pipeline step 2 says "Always verify" the detected
+    # metadata rather than trust it blindly - this is that verification,
+    # acted on rather than just printed.
+    for column in CATEGORICAL_OVERRIDE_COLUMNS:
+        metadata.update_column(column_name=column, sdtype="categorical")
+    print("Metadata after manual correction (velocity_1h, terminal_reversal_count -> categorical):")
+    print(json.dumps(metadata.to_dict(), indent=2))
+
     return metadata
 
 

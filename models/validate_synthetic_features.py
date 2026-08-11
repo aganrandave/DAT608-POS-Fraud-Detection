@@ -1,12 +1,19 @@
 """Five-level synthetic data validation (DAT610 framework), retargeted at
 this project's real feature schema (velocity_1h, geo_jump_km,
-bin_spend_rate, terminal_reversal_count, is_fraud) instead of the DAT610
-coursework's FintechPay stand-in columns.
+bin_spend_rate, terminal_reversal_count, amount_ngn,
+amount_vs_bin_avg_ratio, is_fraud) instead of the DAT610 coursework's
+FintechPay stand-in columns.
 
-Column typing: all four features are continuous/numeric (unlike the
-coursework dataset, there is no categorical feature here) - is_fraud is
-the only categorical/binary column, so Level 3b (chi-squared) applies to
-it alone.
+Column typing for Level 3 (mirrors the categorical override in
+synthetic_augmentation.py's CATEGORICAL_OVERRIDE_COLUMNS): velocity_1h
+and terminal_reversal_count are low-cardinality integer counts (6 and 3
+distinct values respectively, both heavily spiked near their minimum) -
+tested via chi-squared (3b) like is_fraud, not KS/Wasserstein (3a/3c),
+since a discrete spike distribution isn't what those continuous-shape
+tests are designed to compare. geo_jump_km, bin_spend_rate, amount_ngn,
+and amount_vs_bin_avg_ratio are genuinely continuous and use KS/Wasserstein.
+Level 1 (summary stats) and Level 5 (privacy DNNR) still use all six
+features together, since both are dtype-agnostic.
 
 is_approved_for_training() is the production gate: train_xgboost.py /
 train_isolation_forest.py only load synthetic_output/synthetic_features.csv
@@ -14,10 +21,11 @@ if this function returns True AND the operator has opted in via
 USE_SYNTHETIC_AUGMENTATION=true (see excel_reader.load_augmented_training_frame).
 The bar is deliberately strict and consistent with the DAT610 report's own
 conclusion that passing ML-utility (Level 4) alone is not sufficient
-justification: ALL numeric columns must pass KS (3a) and score
-acceptable-or-better on Wasserstein (3c), the fraud rate must be
-chi-squared aligned (3b), TSTR/TRTR AUC gap must be acceptable (4), and
-privacy must not indicate memorisation (5).
+justification: ALL continuous columns must pass KS (3a) and score
+acceptable-or-better on Wasserstein (3c), ALL categorical columns
+(including the fraud rate) must be chi-squared aligned (3b), TSTR/TRTR
+AUC gap must be acceptable (4), and privacy must not indicate
+memorisation (5).
 """
 import json
 import os
@@ -39,8 +47,9 @@ from sklearn.preprocessing import StandardScaler  # noqa: E402
 from synthetic_augmentation import FEATURE_COLUMNS, load_real_data, OUTPUT_DIR, SYNTHETIC_CSV_PATH  # noqa: E402
 from train_xgboost import build_model, compute_scale_pos_weight  # noqa: E402
 
-NUMERIC_COLS = FEATURE_COLUMNS  # all four are continuous
-CATEGORICAL_COLS = ["is_fraud"]
+NUMERIC_COLS = FEATURE_COLUMNS  # all six - used for Level 1 and Level 5 only
+CONTINUOUS_COLS = ["geo_jump_km", "bin_spend_rate", "amount_ngn", "amount_vs_bin_avg_ratio"]  # Level 3a/3c
+CATEGORICAL_COLS = ["is_fraud", "velocity_1h", "terminal_reversal_count"]  # Level 3b
 
 RESULTS_PATH = os.path.join(OUTPUT_DIR, "validation_results.json")
 RANDOM_SEED = 42
@@ -65,7 +74,10 @@ def level2_visual_distributions(real_df: pd.DataFrame, synth_df: pd.DataFrame) -
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     saved_paths = []
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+    # 2x3 to fit all six NUMERIC_COLS - a 2x2 grid here (from before
+    # amount_ngn/amount_vs_bin_avg_ratio were added) was silently truncating
+    # via zip() and never plotting the last two columns.
+    fig, axes = plt.subplots(2, 3, figsize=(16, 8))
     for ax, col in zip(axes.flat, NUMERIC_COLS):
         sns.kdeplot(real_df[col], ax=ax, label="real", fill=True, alpha=0.3)
         sns.kdeplot(synth_df[col], ax=ax, label="synthetic", fill=True, alpha=0.3)
@@ -93,7 +105,7 @@ def level2_visual_distributions(real_df: pd.DataFrame, synth_df: pd.DataFrame) -
 
 def level3a_ks_test(real_df: pd.DataFrame, synth_df: pd.DataFrame) -> dict:
     results = {}
-    for col in NUMERIC_COLS:
+    for col in CONTINUOUS_COLS:
         ks_stat, p_value = stats.ks_2samp(real_df[col].dropna(), synth_df[col].dropna())
         results[col] = {
             "ks_statistic": round(float(ks_stat), 4),
@@ -129,7 +141,7 @@ def level3b_chi_squared(real_df: pd.DataFrame, synth_df: pd.DataFrame) -> dict:
 
 def level3c_wasserstein(real_df: pd.DataFrame, synth_df: pd.DataFrame) -> dict:
     results = {}
-    for col in NUMERIC_COLS:
+    for col in CONTINUOUS_COLS:
         raw_distance = wasserstein_distance(real_df[col], synth_df[col])
         sigma_real = real_df[col].std()
         normalized = raw_distance / sigma_real if sigma_real > 0 else float("inf")
@@ -202,17 +214,21 @@ def is_approved_for_training(results: dict) -> tuple[bool, list[str]]:
     """The production gate. Deliberately strict - see module docstring."""
     reasons = []
 
-    if not results["level3b"]["is_fraud"]["aligned"]:
-        reasons.append("Level 3b: is_fraud class rate not chi-squared aligned")
+    n_cat = len(CATEGORICAL_COLS)
+    n_chi_aligned = sum(1 for v in results["level3b"].values() if v["aligned"])
+    if n_chi_aligned < n_cat:
+        reasons.append(f"Level 3b: only {n_chi_aligned}/{n_cat} categorical columns chi-squared aligned (all required)")
 
-    n_cols = len(NUMERIC_COLS)
+    n_cont = len(CONTINUOUS_COLS)
     n_ks_aligned = sum(1 for v in results["level3a"].values() if v["aligned"])
-    if n_ks_aligned < n_cols:
-        reasons.append(f"Level 3a: only {n_ks_aligned}/{n_cols} numeric columns pass KS (all required)")
+    if n_ks_aligned < n_cont:
+        reasons.append(f"Level 3a: only {n_ks_aligned}/{n_cont} continuous columns pass KS (all required)")
 
     n_wass_ok = sum(1 for v in results["level3c"].values() if v["rating"] != "poor")
-    if n_wass_ok < n_cols:
-        reasons.append(f"Level 3c: only {n_wass_ok}/{n_cols} numeric columns rated acceptable/excellent (all required)")
+    if n_wass_ok < n_cont:
+        reasons.append(
+            f"Level 3c: only {n_wass_ok}/{n_cont} continuous columns rated acceptable/excellent (all required)"
+        )
 
     if results["level4"]["verdict"] == "investigate_before_deployment":
         reasons.append(f"Level 4: TSTR/TRTR AUC gap too large ({results['level4']['auc_gap']})")
@@ -228,11 +244,11 @@ def print_summary(results: dict, approved: bool, reasons: list[str]) -> None:
     n_fail1 = sum(1 for v in results["level1"].values() if v["flag"] == "fail")
     print(f"L1 Summary statistics  : {n_fail1}/{len(NUMERIC_COLS)} columns FAIL (>20% mean diff)")
     n_ks_fail = sum(1 for v in results["level3a"].values() if not v["aligned"])
-    print(f"L3a KS test            : {n_ks_fail}/{len(NUMERIC_COLS)} columns NOT aligned")
+    print(f"L3a KS test            : {n_ks_fail}/{len(CONTINUOUS_COLS)} columns NOT aligned")
     n_chi_fail = sum(1 for v in results["level3b"].values() if not v["aligned"])
     print(f"L3b Chi-squared        : {n_chi_fail}/{len(CATEGORICAL_COLS)} columns NOT aligned")
     n_wass_poor = sum(1 for v in results["level3c"].values() if v["rating"] == "poor")
-    print(f"L3c Wasserstein        : {n_wass_poor}/{len(NUMERIC_COLS)} columns rated POOR")
+    print(f"L3c Wasserstein        : {n_wass_poor}/{len(CONTINUOUS_COLS)} columns rated POOR")
     print(f"L4 TSTR vs TRTR        : gap={results['level4']['auc_gap']} -> {results['level4']['verdict']}")
     print(f"L5 Privacy DNNR        : {results['level5']['dnnr']} -> {results['level5']['interpretation']}")
     print(f"\nAPPROVED FOR TRAINING AUGMENTATION: {approved}")
