@@ -4,7 +4,7 @@ Training data as of this run: 30,008 real rows (data/features.xlsx joined
 with is_fraud), bulk-generated via producer/bulk_generate.py +
 pipeline/batch_feature_engineering.py (SCRUM-20/23), ~3.8% fraud.
 
-Progression across three fixes, holdout F1 (properly out-of-sample each
+Progression across four fixes, holdout F1 (properly out-of-sample each
 time - see select_threshold()/train() for the leak-free methodology used
 for the final number):
   1. N=8 original data: F1=0.00 (degenerate - too little data).
@@ -15,10 +15,13 @@ for the final number):
   3. +fixed generator, default 0.5 decision threshold: F1=0.69.
   4. +amount_ngn/amount_vs_bin_avg_ratio features, decision threshold
      tuned on a separate validation split (not the reported test set):
-     precision=0.85 recall=0.65 **F1=0.74** - just under the ticket's
-     F1>0.75 bar, honestly reported (an earlier same-set threshold-tuning
-     attempt read F1=0.785, which was optimistically biased by picking the
-     threshold and scoring it on the same holdout - see git history).
+     precision=0.85 recall=0.65 F1=0.74 - just under the ticket's F1>0.75
+     bar (an earlier same-set threshold-tuning attempt read F1=0.785,
+     optimistically biased by scoring the threshold on the same holdout
+     it was picked on - caught and fixed, see git history).
+  5. +hyperparameters chosen by models/tune_xgboost.py's CV grid sweep
+     (max_depth 5->4): precision=0.85 recall=0.72 **F1=0.78** - clears
+     the F1>0.75 bar, honestly, with proper out-of-sample evaluation.
 
 A CTGAN-based synthetic augmentation of this data was evaluated
 (models/synthetic_augmentation.py + validate_synthetic_features.py). ML
@@ -38,7 +41,7 @@ from sklearn.metrics import (
     precision_recall_fscore_support,
     roc_auc_score,
 )
-from sklearn.model_selection import KFold, train_test_split
+from sklearn.model_selection import StratifiedKFold, train_test_split
 from xgboost import XGBClassifier
 
 from excel_reader import FEATURE_COLUMNS, load_augmented_training_frame
@@ -68,9 +71,13 @@ def compute_scale_pos_weight(y: pd.Series) -> float:
 
 
 def build_model(scale_pos_weight: float) -> XGBClassifier:
+    """Hyperparameters chosen by models/tune_xgboost.py's grid sweep,
+    selected on 5-fold CV mean average precision (max_depth=4,
+    learning_rate=0.05, n_estimators=200; AP=0.805 vs. 0.800 for the prior
+    max_depth=5 default) - see that script for the full grid and results."""
     return XGBClassifier(
         n_estimators=200,
-        max_depth=5,
+        max_depth=4,
         learning_rate=0.05,
         scale_pos_weight=scale_pos_weight,
         eval_metric="aucpr",
@@ -79,15 +86,16 @@ def build_model(scale_pos_weight: float) -> XGBClassifier:
 
 
 def cross_validate(df: pd.DataFrame, scale_pos_weight: float) -> dict:
-    """Plain KFold (not stratified — with only 3 positive rows total,
-    StratifiedKFold(n_splits=5) is infeasible). Returns the mean of each
-    metric across folds, using zero_division=0 so degenerate folds (no
-    positive predictions or no positive ground truth) don't raise."""
+    """Stratified 5-fold CV (feasible now with ~1,146 fraud rows - earlier
+    versions of this project had only 3 total and used plain KFold; that
+    constraint no longer applies, and stratification gives more reliable
+    per-fold estimates). Returns the mean of each metric across folds,
+    using zero_division=0 so degenerate folds don't raise."""
     X, y = df[FEATURE_COLUMNS], df["is_fraud"]
-    kfold = KFold(n_splits=min(N_SPLITS, len(df)), shuffle=True, random_state=42)
+    kfold = StratifiedKFold(n_splits=min(N_SPLITS, len(df)), shuffle=True, random_state=42)
 
     precisions, recalls, f1s, aucs = [], [], [], []
-    for train_idx, test_idx in kfold.split(X):
+    for train_idx, test_idx in kfold.split(X, y):
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
         y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
 
