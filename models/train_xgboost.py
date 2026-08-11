@@ -2,17 +2,28 @@
 
 Training data as of this run: 30,008 real rows (data/features.xlsx joined
 with is_fraud), bulk-generated via producer/bulk_generate.py +
-pipeline/batch_feature_engineering.py (SCRUM-20/23), ~1.9% fraud - a large
-improvement over the original N=8. A CTGAN-based synthetic augmentation of
-this data was evaluated (models/synthetic_augmentation.py +
-validate_synthetic_features.py) but did NOT pass the five-level validation
-gate: 0/4 features passed the KS test and the TSTR/TRTR AUC gap was 0.11
-(vs. a 0.05 threshold) - USE_SYNTHETIC_AUGMENTATION has no effect until a
-synthetic set actually passes that gate. Separately, TRTR AUC on the real
-data alone came out at only ~0.60 - the current engineered features
-(velocity_1h, geo_jump_km, bin_spend_rate, terminal_reversal_count) carry
-weak fraud signal even with real volume; that is a feature-engineering
-question, not something more data or synthetic augmentation fixes.
+pipeline/batch_feature_engineering.py (SCRUM-20/23), ~3.8% fraud - a large
+improvement over the original N=8. Holdout: precision=0.44 recall=0.84
+f1=0.58 (5-fold CV ROC-AUC ~0.93) - still short of the ticket's F1>0.75
+bar, but a genuinely usable model, not a near-random one.
+
+This required fixing real weaknesses in the transaction generator itself
+(producer/transaction_generator.py, producer/fraud_scenarios.py): terminal
+locations weren't pinned (geo_jump_km was pure noise), bulk-generated
+timestamps weren't spread over a realistic period (trailing-window
+features were nearly meaningless), and cloned_card/agent_collusion fraud
+didn't create the velocity/geo bursts a real classifier could detect. See
+those files' docstrings. Before the fix, holdout F1 was 0.06 (AUC ~0.58)
+on the same row count - volume alone did not fix it.
+
+A CTGAN-based synthetic augmentation of this corrected data was evaluated
+(models/synthetic_augmentation.py + validate_synthetic_features.py). ML
+utility now passes cleanly (TSTR/TRTR AUC gap 0.015) and privacy is clean
+(DNNR 12.0), but the gate still does NOT approve it: CTGAN struggles to
+reproduce the sparse/bursty velocity_1h and terminal_reversal_count
+distributions specifically (KS fails on all 4 features, Wasserstein
+"poor" on those two). USE_SYNTHETIC_AUGMENTATION has no effect until a
+synthetic set actually passes that gate.
 """
 import numpy as np
 import mlflow

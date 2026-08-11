@@ -1,52 +1,52 @@
 {
   "level1": {
     "velocity_1h": {
-      "real_mean": 30.9536,
-      "synthetic_mean": 37.1674,
-      "mean_pct_diff": 20.07,
-      "flag": "fail"
+      "real_mean": 1.0804,
+      "synthetic_mean": 1.2648,
+      "mean_pct_diff": 17.06,
+      "flag": "warn"
     },
     "geo_jump_km": {
-      "real_mean": 372.2014,
-      "synthetic_mean": 338.4557,
-      "mean_pct_diff": 9.07,
-      "flag": "ok"
+      "real_mean": 1.653,
+      "synthetic_mean": 0.6778,
+      "mean_pct_diff": 58.99,
+      "flag": "fail"
     },
     "bin_spend_rate": {
-      "real_mean": 20979.3477,
-      "synthetic_mean": 20935.2123,
-      "mean_pct_diff": 0.21,
+      "real_mean": 21438.3502,
+      "synthetic_mean": 20625.6039,
+      "mean_pct_diff": 3.79,
       "flag": "ok"
     },
     "terminal_reversal_count": {
-      "real_mean": 0.2137,
-      "synthetic_mean": 0.8664,
-      "mean_pct_diff": 305.4,
+      "real_mean": 0.0145,
+      "synthetic_mean": 0.139,
+      "mean_pct_diff": 858.85,
       "flag": "fail"
     }
   },
   "level2_plots": [
-    "synthetic_output\\level2_kde_distributions.png",
-    "synthetic_output\\level2_correlation_heatmaps.png"
+    "C:\\Users\\DELL\\OneDrive\\Documents\\Python\\PAU\\Big Data\\POS_Fraud_Detection\\DAT608-POS-Fraud-Detection\\models\\synthetic_output\\level2_kde_distributions.png",
+    "C:\\Users\\DELL\\OneDrive\\Documents\\Python\\PAU\\Big Data\\POS_Fraud_Detection\\DAT608-POS-Fraud-Detection\\models\\synthetic_output\\level2_correlation_heatmaps.png"
   ],
   "level3a": {
     "velocity_1h": {
-      "ks_statistic": 0.1414,
+      "ks_statistic": 0.1371,
       "p_value": 0.0,
       "aligned": false
     },
     "geo_jump_km": {
-      "ks_statistic": 0.0804,
+      "ks_statistic": 0.4447,
       "p_value": 0.0,
       "aligned": false
     },
     "bin_spend_rate": {
-      "ks_statistic": 0.0699,
+      "ks_statistic": 0.0562,
       "p_value": 0.0,
       "aligned": false
     },
     "terminal_reversal_count": {
-      "ks_statistic": 0.2712,
+      "ks_statistic": 0.1217,
       "p_value": 0.0,
       "aligned": false
     }
@@ -64,43 +64,42 @@
   },
   "level3c": {
     "velocity_1h": {
-      "raw_distance": 6.2387,
-      "normalized_score": 0.3447,
+      "raw_distance": 0.1843,
+      "normalized_score": 0.4862,
       "rating": "poor"
     },
     "geo_jump_km": {
-      "raw_distance": 38.298,
-      "normalized_score": 0.131,
+      "raw_distance": 0.9858,
+      "normalized_score": 0.0593,
       "rating": "acceptable"
     },
     "bin_spend_rate": {
-      "raw_distance": 195.723,
-      "normalized_score": 0.1279,
+      "raw_distance": 1479.6176,
+      "normalized_score": 0.0798,
       "rating": "acceptable"
     },
     "terminal_reversal_count": {
-      "raw_distance": 0.6527,
-      "normalized_score": 1.3406,
+      "raw_distance": 0.1245,
+      "normalized_score": 1.0368,
       "rating": "poor"
     }
   },
   "level4": {
-    "trtr_auc": 0.6036,
-    "tstr_auc": 0.4934,
-    "auc_gap": 0.1102,
-    "verdict": "investigate_before_deployment",
-    "real_test_fraud_rate": 0.0191
+    "trtr_auc": 0.9264,
+    "tstr_auc": 0.9113,
+    "auc_gap": 0.0151,
+    "verdict": "fully_equivalent",
+    "real_test_fraud_rate": 0.0382
   },
   "level5": {
-    "median_d_sr": 0.0591,
-    "median_d_rr": 0.035,
-    "dnnr": 1.6915,
+    "median_d_sr": 0.0004,
+    "median_d_rr": 0.0,
+    "dnnr": 12.043,
     "interpretation": "privacy_preserved"
   },
   "approved_for_training": false,
   "gate_failure_reasons": [
     "Level 3a: only 0/4 numeric columns pass KS (all required)",
-    "Level 3c: only 2/4 numeric columns rated acceptable/excellent (all required)",
-    "Level 4: TSTR/TRTR AUC gap too large (0.1102)"
+    "Level 3c: only 2/4 numeric columns rated acceptable/excellent (all required)"
   ]
 }

@@ -11,7 +11,13 @@ from nibss_distributions import CARD_BINS
 
 def apply_cloned_card(transaction: dict) -> dict:
     """Simulate a cloned card used far from the cardholder's usual terminal,
-    with an amount higher than the state's typical POS ticket size."""
+    with an amount higher than the state's typical POS ticket size.
+
+    The rapid-fire same-terminal, same-card_bin follow-up transactions that
+    make this pattern show up in velocity_1h/bin_spend_rate are generated
+    by transaction_generator._generate_cloned_card_burst(), not here - this
+    function only shapes a single row (used for both the seed transaction
+    and each burst follow-up)."""
     transaction["amount_ngn"] = round(transaction["amount_ngn"] * random.uniform(2.5, 6.0), 2)
     transaction["is_fraud"] = True
     transaction["fraud_type"] = "cloned_card"
@@ -20,8 +26,19 @@ def apply_cloned_card(transaction: dict) -> dict:
 
 def apply_agent_collusion(transaction: dict) -> dict:
     """Simulate a POS agent colluding with a cardholder to run repeated
-    round-numbered transactions just under a monitoring threshold."""
+    round-numbered transactions just under a monitoring threshold, using a
+    portable/compromised terminal away from its registered site.
+
+    Registered terminals (TERMINAL_REGISTRY) don't move, so relocating the
+    reading here by ~30-130km is what makes geo_jump_km spike for these
+    rows - legitimate same-terminal traffic never triggers it."""
     transaction["amount_ngn"] = float(random.choice([49_500, 49_800, 49_900, 49_950]))
+    transaction["latitude"] = round(
+        transaction["latitude"] + random.uniform(0.3, 1.2) * random.choice([-1, 1]), 6
+    )
+    transaction["longitude"] = round(
+        transaction["longitude"] + random.uniform(0.3, 1.2) * random.choice([-1, 1]), 6
+    )
     transaction["is_fraud"] = True
     transaction["fraud_type"] = "agent_collusion"
     return transaction

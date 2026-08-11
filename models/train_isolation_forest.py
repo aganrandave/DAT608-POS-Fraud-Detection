@@ -2,12 +2,19 @@
 
 Training data as of this run: 30,008 real rows (bulk-generated via
 producer/bulk_generate.py + pipeline/batch_feature_engineering.py,
-SCRUM-20/23), ~1.9% fraud. Isolation Forest is fit on non-fraud rows only.
+SCRUM-20/23), ~3.8% fraud, after fixing real weaknesses in the transaction
+generator (terminal-location pinning, realistic timestamp spread,
+velocity/geo fraud bursts - see transaction_generator.py/fraud_scenarios.py
+docstrings). Isolation Forest is fit on non-fraud rows only. Anomaly score
+vs is_fraud correlation: -0.50, precision@1146 (top-scoring anomalies):
+0.50 - a real, usable lift over the ~3.8% base rate.
+
 A CTGAN-based synthetic augmentation of this data was evaluated
-(models/synthetic_augmentation.py + validate_synthetic_features.py) but
-did NOT pass the five-level validation gate (TSTR/TRTR AUC gap 0.11,
-0/4 features KS-aligned) - USE_SYNTHETIC_AUGMENTATION has no effect until
-a synthetic set actually passes that gate.
+(models/synthetic_augmentation.py + validate_synthetic_features.py). ML
+utility and privacy now pass cleanly, but the gate still does NOT approve
+it: CTGAN struggles to reproduce the sparse/bursty velocity_1h and
+terminal_reversal_count distributions specifically. USE_SYNTHETIC_AUGMENTATION
+has no effect until a synthetic set actually passes that gate.
 """
 import os
 

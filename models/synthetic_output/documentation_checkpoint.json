@@ -3,9 +3,9 @@
   "generator_model": "CTGAN via SDV (epochs=300, conditional sampling on is_fraud)",
   "training_data_source": "data/features.xlsx joined with data/transactions_raw.xlsx is_fraud label",
   "real_records": 30008,
-  "real_fraud_rate": 0.0191,
+  "real_fraud_rate": 0.0382,
   "synthetic_records": 30008,
-  "synthetic_fraud_rate": 0.0191,
+  "synthetic_fraud_rate": 0.0382,
   "purpose": "Minority-class training augmentation for train_xgboost.py / train_isolation_forest.py",
   "data_sensitivity": "Derived from producer-simulated transactions - no real customer PII",
   "validation_status": "PENDING - run validate_synthetic_features.py before enabling augmentation"
