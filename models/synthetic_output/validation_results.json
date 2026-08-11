@@ -1,0 +1,106 @@
+{
+  "level1": {
+    "velocity_1h": {
+      "real_mean": 30.9536,
+      "synthetic_mean": 37.1674,
+      "mean_pct_diff": 20.07,
+      "flag": "fail"
+    },
+    "geo_jump_km": {
+      "real_mean": 372.2014,
+      "synthetic_mean": 338.4557,
+      "mean_pct_diff": 9.07,
+      "flag": "ok"
+    },
+    "bin_spend_rate": {
+      "real_mean": 20979.3477,
+      "synthetic_mean": 20935.2123,
+      "mean_pct_diff": 0.21,
+      "flag": "ok"
+    },
+    "terminal_reversal_count": {
+      "real_mean": 0.2137,
+      "synthetic_mean": 0.8664,
+      "mean_pct_diff": 305.4,
+      "flag": "fail"
+    }
+  },
+  "level2_plots": [
+    "synthetic_output\\level2_kde_distributions.png",
+    "synthetic_output\\level2_correlation_heatmaps.png"
+  ],
+  "level3a": {
+    "velocity_1h": {
+      "ks_statistic": 0.1414,
+      "p_value": 0.0,
+      "aligned": false
+    },
+    "geo_jump_km": {
+      "ks_statistic": 0.0804,
+      "p_value": 0.0,
+      "aligned": false
+    },
+    "bin_spend_rate": {
+      "ks_statistic": 0.0699,
+      "p_value": 0.0,
+      "aligned": false
+    },
+    "terminal_reversal_count": {
+      "ks_statistic": 0.2712,
+      "p_value": 0.0,
+      "aligned": false
+    }
+  },
+  "level3b": {
+    "is_fraud": {
+      "chi2_statistic": 0.0,
+      "p_value": 1.0,
+      "aligned": true,
+      "categories": [
+        0,
+        1
+      ]
+    }
+  },
+  "level3c": {
+    "velocity_1h": {
+      "raw_distance": 6.2387,
+      "normalized_score": 0.3447,
+      "rating": "poor"
+    },
+    "geo_jump_km": {
+      "raw_distance": 38.298,
+      "normalized_score": 0.131,
+      "rating": "acceptable"
+    },
+    "bin_spend_rate": {
+      "raw_distance": 195.723,
+      "normalized_score": 0.1279,
+      "rating": "acceptable"
+    },
+    "terminal_reversal_count": {
+      "raw_distance": 0.6527,
+      "normalized_score": 1.3406,
+      "rating": "poor"
+    }
+  },
+  "level4": {
+    "trtr_auc": 0.6036,
+    "tstr_auc": 0.4934,
+    "auc_gap": 0.1102,
+    "verdict": "investigate_before_deployment",
+    "real_test_fraud_rate": 0.0191
+  },
+  "level5": {
+    "median_d_sr": 0.0591,
+    "median_d_rr": 0.035,
+    "dnnr": 1.6915,
+    "interpretation": "privacy_preserved"
+  },
+  "approved_for_training": false,
+  "gate_failure_reasons": [
+    "Level 3a: only 0/4 numeric columns pass KS (all required)",
+    "Level 3c: only 2/4 numeric columns rated acceptable/excellent (all required)",
+    "Level 4: TSTR/TRTR AUC gap too large (0.1102)"
+  ]
+}

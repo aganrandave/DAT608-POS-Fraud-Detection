@@ -1,11 +1,13 @@
 """Trains the unsupervised Isolation Forest anomaly detector and logs it to MLflow.
 
-Honesty note: as of this run, the training data has only 5 non-fraud rows
-(8 total, 3 fraud). Isolation Forest is fit on non-fraud rows only, which
-is correct methodology, but 5 points is far too few to characterize what
-"normal" looks like — treat this as a pipeline correctness check, not a
-production anomaly detector. Re-run once the producer/pipeline have
-generated real volume (SCRUM-20/23).
+Training data as of this run: 30,008 real rows (bulk-generated via
+producer/bulk_generate.py + pipeline/batch_feature_engineering.py,
+SCRUM-20/23), ~1.9% fraud. Isolation Forest is fit on non-fraud rows only.
+A CTGAN-based synthetic augmentation of this data was evaluated
+(models/synthetic_augmentation.py + validate_synthetic_features.py) but
+did NOT pass the five-level validation gate (TSTR/TRTR AUC gap 0.11,
+0/4 features KS-aligned) - USE_SYNTHETIC_AUGMENTATION has no effect until
+a synthetic set actually passes that gate.
 """
 import os
 
@@ -19,7 +21,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from sklearn.ensemble import IsolationForest  # noqa: E402
 
-from excel_reader import load_training_frame  # noqa: E402
+from excel_reader import load_augmented_training_frame  # noqa: E402
 from mlflow_registry import EXPERIMENT_NAME, MODEL_NAME_ISOLATION_FOREST, register_model  # noqa: E402
 
 FEATURE_COLUMNS = [
@@ -33,7 +35,11 @@ OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "eda_output")
 
 
 def load_dataset() -> pd.DataFrame:
-    rows = load_training_frame()
+    """Real data by default. Set USE_SYNTHETIC_AUGMENTATION=true to add
+    CTGAN-synthesized rows on top - only takes effect if
+    validate_synthetic_features.py's gate actually approved them; see
+    excel_reader.load_augmented_training_frame()."""
+    rows = load_augmented_training_frame()
     df = pd.DataFrame(rows)
     df[FEATURE_COLUMNS] = df[FEATURE_COLUMNS].astype(float)
     df["is_fraud"] = df["is_fraud"].astype(bool)

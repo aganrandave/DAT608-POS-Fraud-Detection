@@ -1,14 +1,18 @@
 """Trains the supervised XGBoost fraud classifier and logs it to MLflow.
 
-Honesty note: as of this run, the training data (data/features.xlsx joined
-with is_fraud) has only 8 rows. 5-fold cross-validation is still performed
-here because the ticket calls for it, but with N=8 and 3 positive examples,
-individual folds can have as few as one test sample, sometimes zero
-positives in that sample — per-fold precision/recall/F1 are not
-statistically meaningful at this scale, and neither is the "F1 > 0.75"
-target. Treat the numbers this script prints/logs as a correctness check of
-the pipeline mechanics, not a production model quality bar. Re-run once
-the producer/pipeline have generated real volume (SCRUM-20/23).
+Training data as of this run: 30,008 real rows (data/features.xlsx joined
+with is_fraud), bulk-generated via producer/bulk_generate.py +
+pipeline/batch_feature_engineering.py (SCRUM-20/23), ~1.9% fraud - a large
+improvement over the original N=8. A CTGAN-based synthetic augmentation of
+this data was evaluated (models/synthetic_augmentation.py +
+validate_synthetic_features.py) but did NOT pass the five-level validation
+gate: 0/4 features passed the KS test and the TSTR/TRTR AUC gap was 0.11
+(vs. a 0.05 threshold) - USE_SYNTHETIC_AUGMENTATION has no effect until a
+synthetic set actually passes that gate. Separately, TRTR AUC on the real
+data alone came out at only ~0.60 - the current engineered features
+(velocity_1h, geo_jump_km, bin_spend_rate, terminal_reversal_count) carry
+weak fraud signal even with real volume; that is a feature-engineering
+question, not something more data or synthetic augmentation fixes.
 """
 import numpy as np
 import mlflow
@@ -22,7 +26,7 @@ from sklearn.metrics import (
 from sklearn.model_selection import KFold, train_test_split
 from xgboost import XGBClassifier
 
-from excel_reader import load_training_frame
+from excel_reader import load_augmented_training_frame
 from mlflow_registry import EXPERIMENT_NAME, MODEL_NAME_XGBOOST, register_model
 
 FEATURE_COLUMNS = [
@@ -36,7 +40,11 @@ N_SPLITS = 5
 
 
 def load_dataset() -> pd.DataFrame:
-    rows = load_training_frame()
+    """Real data by default. Set USE_SYNTHETIC_AUGMENTATION=true to add
+    CTGAN-synthesized rows on top - only takes effect if
+    validate_synthetic_features.py's gate actually approved them; see
+    excel_reader.load_augmented_training_frame()."""
+    rows = load_augmented_training_frame()
     df = pd.DataFrame(rows)
     df[FEATURE_COLUMNS] = df[FEATURE_COLUMNS].astype(float)
     df["is_fraud"] = df["is_fraud"].astype(int)
