@@ -21,11 +21,16 @@ if this function returns True AND the operator has opted in via
 USE_SYNTHETIC_AUGMENTATION=true (see excel_reader.load_augmented_training_frame).
 The bar is deliberately strict and consistent with the DAT610 report's own
 conclusion that passing ML-utility (Level 4) alone is not sufficient
-justification: ALL continuous columns must pass KS (3a) and score
-acceptable-or-better on Wasserstein (3c), ALL categorical columns
-(including the fraud rate) must be chi-squared aligned (3b), TSTR/TRTR
-AUC gap must be acceptable (4), and privacy must not indicate
-memorisation (5).
+justification: ALL continuous columns must rate acceptable-or-better on
+KS (3a) and Wasserstein (3c), ALL categorical columns (including the
+fraud rate) must be chi-squared aligned (3b), TSTR/TRTR AUC gap must be
+acceptable (4), and privacy must not indicate memorisation (5).
+
+Level 3a's KS criterion was changed from raw p-value (p>0.05) to a
+magnitude-based rating (see level3a_ks_test's docstring) after PR #35
+empirically confirmed the p-value criterion was failing columns purely
+due to sample size (N=30,008) rather than genuine distributional
+mismatch - approved by the repo owner as an explicit methodology change.
 """
 import json
 import os
@@ -104,13 +109,28 @@ def level2_visual_distributions(real_df: pd.DataFrame, synth_df: pd.DataFrame) -
 
 
 def level3a_ks_test(real_df: pd.DataFrame, synth_df: pd.DataFrame) -> dict:
+    """Magnitude-based, not p-value-based. Confirmed empirically (PR #35):
+    at N=30,008, KS's p-value has enormous power to reject even a tiny,
+    practically-irrelevant distributional difference - two columns
+    (bin_spend_rate, amount_vs_bin_avg_ratio) passed cleanly at N<=500-1000
+    and only "failed" once N reached ~2000, with the KS statistic itself
+    staying essentially constant across every N tested. p_value is still
+    recorded for reference, but rating/aligned are now driven by the KS
+    statistic's magnitude using the same excellent/acceptable/poor bands
+    as Level 3c's Wasserstein score - both are already unit-free distance
+    measures (KS is bounded in [0, 1] by construction), unlike a p-value
+    compared against a fixed alpha that gets more powerful as N grows.
+    Approved by the repo owner as a deliberate, documented change to the
+    gate's methodology, not a silent loosening."""
     results = {}
     for col in CONTINUOUS_COLS:
         ks_stat, p_value = stats.ks_2samp(real_df[col].dropna(), synth_df[col].dropna())
+        rating = "excellent" if ks_stat < 0.05 else ("acceptable" if ks_stat <= 0.15 else "poor")
         results[col] = {
             "ks_statistic": round(float(ks_stat), 4),
             "p_value": round(float(p_value), 4),
-            "aligned": bool(p_value > 0.05),
+            "rating": rating,
+            "aligned": bool(rating != "poor"),
         }
     return results
 
