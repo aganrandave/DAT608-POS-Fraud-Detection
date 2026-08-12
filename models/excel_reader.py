@@ -59,10 +59,8 @@ def load_training_frame(
     return features
 
 
-def load_augmented_training_frame(
-    features_path: str = FEATURES_XLSX, transactions_path: str = TRANSACTIONS_XLSX
-) -> list[dict]:
-    """load_training_frame(), plus CTGAN-synthesized minority-class rows from
+def load_approved_synthetic_rows() -> list[dict]:
+    """CTGAN-synthesized minority-class rows from
     synthetic_output/synthetic_features.csv - but ONLY if both:
 
       1. USE_SYNTHETIC_AUGMENTATION=true is set in the environment (opt-in,
@@ -73,21 +71,24 @@ def load_augmented_training_frame(
          exact criteria).
 
     If augmentation is requested but the gate rejected it (or validation
-    was never run), this prints why and silently falls back to the real
-    data only - it never fabricates rows into a "pass" that didn't happen.
-    Synthetic rows carry no transaction_id/terminal_id/card_bin/timestamp
-    (CTGAN never generated those - see synthetic_augmentation.py), so they
-    are appended as feature+label rows only, not disguised as real records.
-    """
-    real_rows = load_training_frame(features_path, transactions_path)
+    was never run), this prints why and returns [] - it never fabricates
+    rows into a "pass" that didn't happen. Synthetic rows carry no
+    transaction_id/terminal_id/card_bin/timestamp (CTGAN never generated
+    those - see synthetic_augmentation.py), so callers get feature+label
+    rows only, never disguised as real records.
 
+    Deliberately returns just the synthetic rows rather than a combined
+    frame: callers (train_xgboost.py) need to add these ONLY to their
+    training pool and keep the held-out test split real-only, so that an
+    augmented run and a real-only run are evaluated on identical,
+    comparable, real-world holdout data - see train_xgboost.py's train()."""
     if os.getenv("USE_SYNTHETIC_AUGMENTATION", "false").lower() != "true":
-        return real_rows
+        return []
 
     if not os.path.exists(SYNTHETIC_VALIDATION_RESULTS):
         print("USE_SYNTHETIC_AUGMENTATION=true but no validation_results.json found - "
-              "run models/validate_synthetic_features.py first. Falling back to real data only.")
-        return real_rows
+              "run models/validate_synthetic_features.py first. No synthetic rows added.")
+        return []
 
     with open(SYNTHETIC_VALIDATION_RESULTS) as f:
         validation_results = json.load(f)
@@ -95,8 +96,8 @@ def load_augmented_training_frame(
     if not validation_results.get("approved_for_training"):
         reasons = "; ".join(validation_results.get("gate_failure_reasons", []))
         print(f"USE_SYNTHETIC_AUGMENTATION=true but the validation gate did NOT approve this "
-              f"synthetic set ({reasons}). Falling back to real data only.")
-        return real_rows
+              f"synthetic set ({reasons}). No synthetic rows added.")
+        return []
 
     with open(SYNTHETIC_FEATURES_CSV, newline="") as f:
         synthetic_rows = [
@@ -111,6 +112,17 @@ def load_augmented_training_frame(
             for row in csv.DictReader(f)
         ]
 
-    print(f"USE_SYNTHETIC_AUGMENTATION=true and gate approved - adding {len(synthetic_rows)} "
-          f"validated synthetic rows to {len(real_rows)} real rows.")
-    return real_rows + synthetic_rows
+    print(f"USE_SYNTHETIC_AUGMENTATION=true and gate approved - {len(synthetic_rows)} "
+          f"validated synthetic rows available for the training pool.")
+    return synthetic_rows
+
+
+def load_augmented_training_frame(
+    features_path: str = FEATURES_XLSX, transactions_path: str = TRANSACTIONS_XLSX
+) -> list[dict]:
+    """load_training_frame() plus load_approved_synthetic_rows(), for
+    callers that don't need to keep a real-only test split separate (e.g.
+    train_isolation_forest.py, which is unsupervised and has no held-out
+    labelled test set in the same sense)."""
+    real_rows = load_training_frame(features_path, transactions_path)
+    return real_rows + load_approved_synthetic_rows()
