@@ -3,10 +3,10 @@
 Split into a pure filtering function (filter_alerts, easy to unit test) and
 a Streamlit sidebar renderer (render_filters) that collects the widget
 selections and calls it - keeps the filtering logic testable without a
-Streamlit runtime.
+Streamlit runtime. streamlit is imported inside render_filters, not at
+module level, so importing filter_alerts alone (as tests/unit/test_dashboard.py
+does) never requires streamlit to be installed.
 """
-import streamlit as st
-
 from components.tier_colors import TIER_ORDER
 
 
@@ -29,6 +29,8 @@ def render_filters(alerts: list[dict], key_prefix: str = "") -> tuple[list[str],
     feature was added until the user actually narrows something down.
     key_prefix disambiguates widget keys when the same filters are rendered
     on more than one page in the same session."""
+    import streamlit as st
+
     available_tiers = [t for t in TIER_ORDER if t in {a.get("alert_tier") for a in alerts}]
     available_states = sorted({a.get("state") for a in alerts if a.get("state")})
 

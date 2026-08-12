@@ -1,6 +1,9 @@
-"""Top-of-page KPI metrics: alert counts by tier, plus the top-5 at-risk terminals."""
-import streamlit as st
+"""Top-of-page KPI metrics: alert counts by tier, plus the top-5 at-risk terminals.
 
+streamlit is imported inside render_metrics_panel, not at module level, so
+importing top_n_at_risk_terminals alone (as tests/unit/test_dashboard.py
+does) never requires streamlit to be installed.
+"""
 from components.tier_colors import tier_hex
 
 
@@ -30,6 +33,8 @@ def top_n_at_risk_terminals(alerts: list[dict], terminals: list[dict] | None = N
 
 
 def render_metrics_panel(alerts: list[dict], terminals: list[dict] | None = None) -> None:
+    import streamlit as st
+
     total = len(alerts)
     critical = sum(1 for a in alerts if a["alert_tier"] == "critical")
     high = sum(1 for a in alerts if a["alert_tier"] == "high")
