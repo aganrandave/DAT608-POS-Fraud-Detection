@@ -1,11 +1,29 @@
 """Trains the unsupervised Isolation Forest anomaly detector and logs it to MLflow.
 
-Honesty note: as of this run, the training data has only 5 non-fraud rows
-(8 total, 3 fraud). Isolation Forest is fit on non-fraud rows only, which
-is correct methodology, but 5 points is far too few to characterize what
-"normal" looks like — treat this as a pipeline correctness check, not a
-production anomaly detector. Re-run once the producer/pipeline have
-generated real volume (SCRUM-20/23).
+Training data as of this run: 30,008 real rows (bulk-generated via
+producer/bulk_generate.py + pipeline/batch_feature_engineering.py,
+SCRUM-20/23), ~3.8% fraud, after fixing real weaknesses in the transaction
+generator (terminal-location pinning, realistic timestamp spread,
+velocity/geo fraud bursts - see transaction_generator.py/fraud_scenarios.py
+docstrings). Isolation Forest is fit on non-fraud rows only.
+
+Honesty note: adding amount_ngn/amount_vs_bin_avg_ratio (which meaningfully
+improved the supervised XGBoost model - see train_xgboost.py) made this
+unsupervised model slightly WORSE: anomaly-score/is_fraud correlation
+-0.50->-0.44, precision@1146 0.50->0.42. Extra feature dimensions aren't
+free for Isolation Forest the way they are for a supervised model - added
+variance in normal transactions' amount can dilute the relative isolation
+of fraud points rather than sharpen it. Left as-is rather than reverting,
+since the feature set is shared with train_xgboost.py via
+excel_reader.FEATURE_COLUMNS and the supervised model is the primary
+classifier; worth revisiting if Isolation Forest becomes the priority.
+
+A CTGAN-based synthetic augmentation of this data was evaluated
+(models/synthetic_augmentation.py + validate_synthetic_features.py). ML
+utility and privacy now pass cleanly, but the gate still does NOT approve
+it: CTGAN struggles to reproduce the sparse/bursty velocity_1h and
+terminal_reversal_count distributions specifically. USE_SYNTHETIC_AUGMENTATION
+has no effect until a synthetic set actually passes that gate.
 """
 import os
 
@@ -19,21 +37,18 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from sklearn.ensemble import IsolationForest  # noqa: E402
 
-from excel_reader import load_training_frame  # noqa: E402
+from excel_reader import FEATURE_COLUMNS, load_augmented_training_frame  # noqa: E402
 from mlflow_registry import EXPERIMENT_NAME, MODEL_NAME_ISOLATION_FOREST, register_model  # noqa: E402
-
-FEATURE_COLUMNS = [
-    "velocity_1h",
-    "geo_jump_km",
-    "bin_spend_rate",
-    "terminal_reversal_count",
-]
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "eda_output")
 
 
 def load_dataset() -> pd.DataFrame:
-    rows = load_training_frame()
+    """Real data by default. Set USE_SYNTHETIC_AUGMENTATION=true to add
+    CTGAN-synthesized rows on top - only takes effect if
+    validate_synthetic_features.py's gate actually approved them; see
+    excel_reader.load_augmented_training_frame()."""
+    rows = load_augmented_training_frame()
     df = pd.DataFrame(rows)
     df[FEATURE_COLUMNS] = df[FEATURE_COLUMNS].astype(float)
     df["is_fraud"] = df["is_fraud"].astype(bool)

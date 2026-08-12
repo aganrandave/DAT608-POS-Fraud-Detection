@@ -1,0 +1,168 @@
+"""Generates a validated CTGAN synthetic augmentation of the real training
+data (data/features.xlsx joined with is_fraud via excel_reader.py).
+
+This retargets the DAT610 (Ethics & Privacy) synthetic-data-validation
+exercise's CTGAN pipeline and five-level validation framework at this
+project's actual schema, instead of the coursework's FintechPay stand-in
+columns. Context: even after bulk-generating 30,000 rows via
+producer/bulk_generate.py + pipeline/batch_feature_engineering.py
+(SCRUM-20/23), fraud is intentionally rare (~2% FRAUD_RATE in
+producer/config.py), so the model only ever sees a few hundred positive
+examples. This script asks whether a CTGAN-synthesized augmentation of
+the minority class can be validated as safe to add on top of that.
+
+Conditional sampling is used from the start, jointly on is_fraud AND
+terminal_reversal_count (see sample_conditionally_on_joint_distribution) -
+the DAT610 exercise found unconditional sampling badly inflates the
+synthetic fraud rate, and conditioning on is_fraud alone still left
+terminal_reversal_count's own rare-category rate uncorrected; no need to
+repeat either mistake here. velocity_1h and
+terminal_reversal_count are explicitly overridden to categorical sdtype
+(see CATEGORICAL_OVERRIDE_COLUMNS below) - both are low-cardinality
+integer counts that CTGAN's default "numerical" mode-specific
+normalisation modelled poorly, which was the diagnosed root cause of the
+validation gate's persistent KS/Wasserstein failures on exactly those two
+columns across every prior run of this pipeline.
+
+Deliberately does NOT fabricate transaction_id/terminal_id/card_bin/
+timestamp identifier columns, and does NOT write synthetic rows into
+data/features.xlsx - the real Excel data store stays exclusively real,
+preserving provenance. Output goes to synthetic_output/, a separate,
+clearly-labelled artifact that train_xgboost.py/train_isolation_forest.py
+only load if explicitly opted into via USE_SYNTHETIC_AUGMENTATION=true
+AND validate_synthetic_features.py's gate has actually passed - see
+that script's is_approved_for_training().
+"""
+import json
+import os
+from datetime import datetime, timezone
+
+import pandas as pd
+from sdv.metadata import SingleTableMetadata
+from sdv.sampling import Condition
+from sdv.single_table import CTGANSynthesizer
+
+from excel_reader import FEATURE_COLUMNS, load_training_frame
+
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "synthetic_output")
+SYNTHETIC_CSV_PATH = os.path.join(OUTPUT_DIR, "synthetic_features.csv")
+DOC_CHECKPOINT_PATH = os.path.join(OUTPUT_DIR, "documentation_checkpoint.json")
+
+CTGAN_EPOCHS = 300
+
+
+def load_real_data() -> pd.DataFrame:
+    rows = load_training_frame()
+    df = pd.DataFrame(rows)[FEATURE_COLUMNS + ["is_fraud"]]
+    df[FEATURE_COLUMNS] = df[FEATURE_COLUMNS].astype(float)
+    df["is_fraud"] = df["is_fraud"].astype(int)
+    return df
+
+
+# Columns auto-detected as "numerical" that are actually low-cardinality
+# integer counts (velocity_1h: 6 distinct values, 94% at the minimum;
+# terminal_reversal_count: 3 distinct values, 98.5% at zero). CTGAN models
+# "numerical" columns via mode-specific Gaussian-mixture normalisation,
+# which is a poor fit for a near-constant spike distribution - this was
+# the diagnosed root cause of validate_synthetic_features.py's KS/
+# Wasserstein failures on exactly these two columns. Overriding them to
+# "categorical" lets CTGAN model each observed integer as its own class.
+CATEGORICAL_OVERRIDE_COLUMNS = ["velocity_1h", "terminal_reversal_count"]
+
+
+def detect_metadata(real_df: pd.DataFrame) -> SingleTableMetadata:
+    metadata = SingleTableMetadata()
+    metadata.detect_from_dataframe(real_df)
+    print("Auto-detected metadata:")
+    print(json.dumps(metadata.to_dict(), indent=2))
+
+    # The lecture's own pipeline step 2 says "Always verify" the detected
+    # metadata rather than trust it blindly - this is that verification,
+    # acted on rather than just printed.
+    for column in CATEGORICAL_OVERRIDE_COLUMNS:
+        metadata.update_column(column_name=column, sdtype="categorical")
+    print("Metadata after manual correction (velocity_1h, terminal_reversal_count -> categorical):")
+    print(json.dumps(metadata.to_dict(), indent=2))
+
+    return metadata
+
+
+def train_synthesizer(real_df: pd.DataFrame, metadata: SingleTableMetadata) -> CTGANSynthesizer:
+    synthesizer = CTGANSynthesizer(metadata, epochs=CTGAN_EPOCHS, verbose=True)
+    synthesizer.fit(real_df)
+    return synthesizer
+
+
+JOINT_CONDITION_COLUMNS = ["is_fraud", "terminal_reversal_count"]
+
+
+def sample_conditionally_on_joint_distribution(
+    synthesizer: CTGANSynthesizer, real_df: pd.DataFrame
+) -> pd.DataFrame:
+    """Sample the same total row count as real_df, conditioning JOINTLY on
+    is_fraud and terminal_reversal_count at their exact real joint counts -
+    not just is_fraud alone (the original version of this function).
+    Conditioning on is_fraud alone left terminal_reversal_count's own
+    rarity uncorrected: CTGAN still over-generated its rare non-zero
+    categories within each fraud class (synthetic mean 0.136 vs real
+    0.0145 even after fixing its metadata type to categorical - see
+    validate_synthetic_features.py's module docstring). This applies the
+    same conditional-sampling technique that fixed is_fraud's rate to the
+    other column that needed it.
+
+    One joint cell is extremely rare (is_fraud=1, terminal_reversal_count=2:
+    2 of 30,008 real rows) - max_tries_per_batch is raised well above SDV's
+    default to give the conditional sampler a real chance at it rather than
+    silently dropping it."""
+    joint_counts = real_df.groupby(JOINT_CONDITION_COLUMNS).size()
+    conditions = [
+        Condition(
+            num_rows=int(count),
+            column_values={"is_fraud": int(is_fraud), "terminal_reversal_count": trc},
+        )
+        for (is_fraud, trc), count in joint_counts.items()
+        if count > 0
+    ]
+    synthetic_df = synthesizer.sample_from_conditions(conditions=conditions, max_tries_per_batch=2000)
+    return synthetic_df.sample(frac=1, random_state=42).reset_index(drop=True)
+
+
+def write_documentation_checkpoint(real_df: pd.DataFrame, synthetic_df: pd.DataFrame) -> None:
+    checkpoint = {
+        "date_generated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "generator_model": (
+            f"CTGAN via SDV (epochs={CTGAN_EPOCHS}, conditional sampling jointly on "
+            f"{JOINT_CONDITION_COLUMNS})"
+        ),
+        "training_data_source": "data/features.xlsx joined with data/transactions_raw.xlsx is_fraud label",
+        "real_records": len(real_df),
+        "real_fraud_rate": round(float(real_df["is_fraud"].mean()), 4),
+        "synthetic_records": len(synthetic_df),
+        "synthetic_fraud_rate": round(float(synthetic_df["is_fraud"].mean()), 4),
+        "purpose": "Minority-class training augmentation for train_xgboost.py / train_isolation_forest.py",
+        "data_sensitivity": "Derived from producer-simulated transactions - no real customer PII",
+        "validation_status": "PENDING - run validate_synthetic_features.py before enabling augmentation",
+    }
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    with open(DOC_CHECKPOINT_PATH, "w") as f:
+        json.dump(checkpoint, f, indent=2)
+    print(f"Documentation checkpoint written -> {DOC_CHECKPOINT_PATH}")
+
+
+def main() -> None:
+    real_df = load_real_data()
+    metadata = detect_metadata(real_df)
+
+    synthesizer = train_synthesizer(real_df, metadata)
+    synthetic_df = sample_conditionally_on_joint_distribution(synthesizer, real_df)
+
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    synthetic_df.to_csv(SYNTHETIC_CSV_PATH, index=False)
+    write_documentation_checkpoint(real_df, synthetic_df)
+
+    print(f"Generated {len(synthetic_df)} synthetic rows -> {SYNTHETIC_CSV_PATH}")
+    print(f"Synthetic fraud rate: {synthetic_df['is_fraud'].mean():.2%} (real was {real_df['is_fraud'].mean():.2%})")
+
+
+if __name__ == "__main__":
+    main()

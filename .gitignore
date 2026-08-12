@@ -13,3 +13,6 @@ build/
 .ipynb_checkpoints/
 *.log
 *.tmp
+
+# DAT610 (Ethics & Privacy) coursework — individual assignment, not part of the capstone deliverable
+dat610-assignment/

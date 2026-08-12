@@ -57,18 +57,29 @@ def with_terminal_reversal_count(df: DataFrame) -> DataFrame:
     return df.withColumn("terminal_reversal_count", F.sum(is_reversal).over(window_spec))
 
 
+def with_amount_vs_bin_avg_ratio(df: DataFrame) -> DataFrame:
+    """Ratio of this transaction's amount to its card BIN's trailing-1h
+    average spend (must run after with_bin_spend_rate) - a sharper anomaly
+    signal than amount_ngn or bin_spend_rate alone, since it's normalised
+    against a recent local baseline rather than compared raw."""
+    return df.withColumn("amount_vs_bin_avg_ratio", F.col("amount_ngn") / F.col("bin_spend_rate"))
+
+
 def build_features(df: DataFrame) -> DataFrame:
     df = with_velocity_1h(df)
     df = with_geo_jump(df)
     df = with_bin_spend_rate(df)
     df = with_terminal_reversal_count(df)
+    df = with_amount_vs_bin_avg_ratio(df)
     return df.select(
         "transaction_id",
         "terminal_id",
         "card_bin",
+        "amount_ngn",
         "velocity_1h",
         "geo_jump_km",
         "bin_spend_rate",
         "terminal_reversal_count",
+        "amount_vs_bin_avg_ratio",
         "timestamp",
     )
