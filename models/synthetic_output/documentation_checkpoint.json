@@ -1,6 +1,6 @@
 {
-  "date_generated": "2026-08-11",
-  "generator_model": "CTGAN via SDV (epochs=300, conditional sampling on is_fraud)",
+  "date_generated": "2026-08-12",
+  "generator_model": "CTGAN via SDV (epochs=300, conditional sampling jointly on ['is_fraud', 'terminal_reversal_count'])",
   "training_data_source": "data/features.xlsx joined with data/transactions_raw.xlsx is_fraud label",
   "real_records": 30008,
   "real_fraud_rate": 0.0382,
