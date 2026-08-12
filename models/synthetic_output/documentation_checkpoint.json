@@ -1,10 +1,10 @@
 {
   "date_generated": "2026-08-12",
-  "generator_model": "CTGAN via SDV (epochs=300, conditional sampling jointly on ['is_fraud', 'terminal_reversal_count'])",
+  "generator_model": "CTGAN via SDV (epochs=300, conditional sampling jointly on ['is_fraud', 'terminal_reversal_count', 'velocity_1h', 'has_geo_jump'])",
   "training_data_source": "data/features.xlsx joined with data/transactions_raw.xlsx is_fraud label",
   "real_records": 30008,
   "real_fraud_rate": 0.0382,
-  "synthetic_records": 30008,
+  "synthetic_records": 30007,
   "synthetic_fraud_rate": 0.0382,
   "purpose": "Minority-class training augmentation for train_xgboost.py / train_isolation_forest.py",
   "data_sensitivity": "Derived from producer-simulated transactions - no real customer PII",

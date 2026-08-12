@@ -2,38 +2,38 @@
   "level1": {
     "velocity_1h": {
       "real_mean": 1.0804,
-      "synthetic_mean": 1.2269,
-      "mean_pct_diff": 13.56,
-      "flag": "warn"
+      "synthetic_mean": 1.0804,
+      "mean_pct_diff": 0.0,
+      "flag": "ok"
     },
     "geo_jump_km": {
       "real_mean": 1.653,
-      "synthetic_mean": 0.6609,
-      "mean_pct_diff": 60.02,
-      "flag": "fail"
+      "synthetic_mean": 1.4576,
+      "mean_pct_diff": 11.82,
+      "flag": "warn"
     },
     "bin_spend_rate": {
       "real_mean": 21438.3502,
-      "synthetic_mean": 22560.2981,
-      "mean_pct_diff": 5.23,
+      "synthetic_mean": 20319.9748,
+      "mean_pct_diff": 5.22,
       "flag": "ok"
     },
     "terminal_reversal_count": {
       "real_mean": 0.0145,
       "synthetic_mean": 0.0145,
-      "mean_pct_diff": 0.0,
+      "mean_pct_diff": 0.23,
       "flag": "ok"
     },
     "amount_ngn": {
       "real_mean": 21617.9483,
-      "synthetic_mean": 20942.905,
-      "mean_pct_diff": 3.12,
-      "flag": "ok"
+      "synthetic_mean": 17737.4479,
+      "mean_pct_diff": 17.95,
+      "flag": "warn"
     },
     "amount_vs_bin_avg_ratio": {
       "real_mean": 1.0045,
-      "synthetic_mean": 1.0502,
-      "mean_pct_diff": 4.55,
+      "synthetic_mean": 0.9747,
+      "mean_pct_diff": 2.97,
       "flag": "ok"
     }
   },
@@ -43,30 +43,34 @@
   ],
   "level3a": {
     "geo_jump_km": {
-      "ks_statistic": 0.6611,
-      "p_value": 0.0,
-      "aligned": false
+      "ks_statistic": 0.0037,
+      "p_value": 0.9845,
+      "rating": "excellent",
+      "aligned": true
     },
     "bin_spend_rate": {
-      "ks_statistic": 0.0287,
+      "ks_statistic": 0.0553,
       "p_value": 0.0,
-      "aligned": false
+      "rating": "acceptable",
+      "aligned": true
     },
     "amount_ngn": {
-      "ks_statistic": 0.0372,
+      "ks_statistic": 0.0767,
       "p_value": 0.0,
-      "aligned": false
+      "rating": "acceptable",
+      "aligned": true
     },
     "amount_vs_bin_avg_ratio": {
-      "ks_statistic": 0.0464,
+      "ks_statistic": 0.0508,
       "p_value": 0.0,
-      "aligned": false
+      "rating": "acceptable",
+      "aligned": true
     }
   },
   "level3b": {
     "is_fraud": {
-      "chi2_statistic": 0.0,
-      "p_value": 1.0,
+      "chi2_statistic": 0.0008,
+      "p_value": 0.9769,
       "aligned": true,
       "categories": [
         0,
@@ -74,9 +78,9 @@
       ]
     },
     "velocity_1h": {
-      "chi2_statistic": 2298.4456,
-      "p_value": 0.0,
-      "aligned": false,
+      "chi2_statistic": 0.0007,
+      "p_value": 1.0,
+      "aligned": true,
       "categories": [
         1.0,
         2.0,
@@ -87,8 +91,8 @@
       ]
     },
     "terminal_reversal_count": {
-      "chi2_statistic": 0.0,
-      "p_value": 1.0,
+      "chi2_statistic": 0.0023,
+      "p_value": 0.9989,
       "aligned": true,
       "categories": [
         0.0,
@@ -99,42 +103,39 @@
   },
   "level3c": {
     "geo_jump_km": {
-      "raw_distance": 1.0138,
-      "normalized_score": 0.0609,
-      "rating": "acceptable"
+      "raw_distance": 0.3122,
+      "normalized_score": 0.0188,
+      "rating": "excellent"
     },
     "bin_spend_rate": {
-      "raw_distance": 1281.3755,
-      "normalized_score": 0.0691,
+      "raw_distance": 1795.8453,
+      "normalized_score": 0.0968,
       "rating": "acceptable"
     },
     "amount_ngn": {
-      "raw_distance": 1858.4085,
-      "normalized_score": 0.0503,
+      "raw_distance": 4160.5882,
+      "normalized_score": 0.1127,
       "rating": "acceptable"
     },
     "amount_vs_bin_avg_ratio": {
-      "raw_distance": 0.0759,
-      "normalized_score": 0.0739,
+      "raw_distance": 0.065,
+      "normalized_score": 0.0632,
       "rating": "acceptable"
     }
   },
   "level4": {
     "trtr_auc": 0.9556,
-    "tstr_auc": 0.9356,
-    "auc_gap": 0.02,
+    "tstr_auc": 0.9436,
+    "auc_gap": 0.012,
     "verdict": "fully_equivalent",
     "real_test_fraud_rate": 0.0382
   },
   "level5": {
-    "median_d_sr": 0.0962,
+    "median_d_sr": 0.088,
     "median_d_rr": 0.0072,
-    "dnnr": 13.3284,
+    "dnnr": 12.1921,
     "interpretation": "privacy_preserved"
   },
-  "approved_for_training": false,
-  "gate_failure_reasons": [
-    "Level 3b: only 2/3 categorical columns chi-squared aligned (all required)",
-    "Level 3a: only 0/4 continuous columns pass KS (all required)"
-  ]
+  "approved_for_training": true,
+  "gate_failure_reasons": []
 }

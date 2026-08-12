@@ -23,13 +23,23 @@ for the final number):
      (max_depth 5->4): precision=0.85 recall=0.72 **F1=0.78** - clears
      the F1>0.75 bar, honestly, with proper out-of-sample evaluation.
 
-A CTGAN-based synthetic augmentation of this data was evaluated
-(models/synthetic_augmentation.py + validate_synthetic_features.py). ML
-utility passes cleanly (TSTR/TRTR AUC gap 0.015) and privacy is clean
-(DNNR 12.0), but the gate still does NOT approve it: CTGAN struggles to
-reproduce the sparse/bursty velocity_1h and terminal_reversal_count
-distributions specifically. USE_SYNTHETIC_AUGMENTATION has no effect
-until a synthetic set actually passes that gate.
+A CTGAN-based synthetic augmentation of this data (models/
+synthetic_augmentation.py + validate_synthetic_features.py) now passes
+the validation gate after PR #35's fixes. USE_SYNTHETIC_AUGMENTATION=true
+adds the approved synthetic rows to the train/val pool only - see
+train()'s docstring for why the reported test set stays real-only
+regardless, so augmented-vs-real-only runs are directly comparable.
+
+Measured result of actually enabling it: holdout F1 0.78 -> 0.73 (0.85/0.72
+precision/recall -> 0.83/0.66) on the SAME real-only test set, 5-fold CV
+on real data unchanged (confirming both runs are scored identically).
+Passing the validation gate confirms the synthetic data is statistically
+valid and privacy-safe - it does not guarantee it helps this specific
+downstream model, and here it measurably didn't: with 24,006 real training
+rows already, the marginal value of more data appears saturated, and the
+synthetic rows' imperfect distributional match (even though "acceptable"
+by every gate metric) added noise rather than signal. Left off by default
+(USE_SYNTHETIC_AUGMENTATION unset) on the strength of this result.
 """
 import numpy as np
 import mlflow
@@ -44,22 +54,25 @@ from sklearn.metrics import (
 from sklearn.model_selection import StratifiedKFold, train_test_split
 from xgboost import XGBClassifier
 
-from excel_reader import FEATURE_COLUMNS, load_augmented_training_frame
+from excel_reader import FEATURE_COLUMNS, load_approved_synthetic_rows, load_training_frame
 from mlflow_registry import EXPERIMENT_NAME, MODEL_NAME_XGBOOST, register_model
 
 N_SPLITS = 5
 
 
-def load_dataset() -> pd.DataFrame:
-    """Real data by default. Set USE_SYNTHETIC_AUGMENTATION=true to add
-    CTGAN-synthesized rows on top - only takes effect if
-    validate_synthetic_features.py's gate actually approved them; see
-    excel_reader.load_augmented_training_frame()."""
-    rows = load_augmented_training_frame()
+def _to_frame(rows: list[dict]) -> pd.DataFrame:
     df = pd.DataFrame(rows)
     df[FEATURE_COLUMNS] = df[FEATURE_COLUMNS].astype(float)
     df["is_fraud"] = df["is_fraud"].astype(int)
     return df
+
+
+def load_dataset() -> pd.DataFrame:
+    """Real data only - used by cross_validate() and CV-based reporting,
+    which don't have a train()-style held-out test split to protect. See
+    train()'s docstring for why the real+synthetic mix used there is
+    assembled differently."""
+    return _to_frame(load_training_frame())
 
 
 def compute_scale_pos_weight(y: pd.Series) -> float:
@@ -136,17 +149,39 @@ def select_threshold(y_true: pd.Series, y_prob: np.ndarray) -> float:
 
 
 def train() -> XGBClassifier:
-    df = load_dataset()
-    scale_pos_weight = compute_scale_pos_weight(df["is_fraud"])
+    """Test set is ALWAYS drawn from real data only, split off BEFORE any
+    synthetic augmentation is added - so a USE_SYNTHETIC_AUGMENTATION=true
+    run and a real-only run are scored on identical, comparable, genuinely
+    real-world holdout data. Synthetic rows (only added if the operator
+    opted in AND validate_synthetic_features.py's gate approved them - see
+    excel_reader.load_approved_synthetic_rows()) are mixed in ONLY to the
+    train/val pool used for fitting and threshold selection. Without this
+    split-before-augment ordering, a naive train_test_split on the
+    combined frame would let synthetic rows leak into the reported test
+    set, partly evaluating the model on data drawn from the same
+    generative process it was trained on - not a fair comparison."""
+    real_df = _to_frame(load_training_frame())
 
     # Three-way split: train the threshold-selection model on X_train, pick
     # the decision threshold on X_val, then fit the final model on the full
-    # X_trainval and report at that threshold on the untouched X_test. This
-    # avoids the leakage of picking a threshold and reporting F1 on the same
-    # holdout set, which is optimistically biased.
-    X_trainval, X_test, y_trainval, y_test = train_test_split(
-        df[FEATURE_COLUMNS], df["is_fraud"], test_size=0.2, random_state=42, stratify=df["is_fraud"]
+    # X_trainval and report at that threshold on the untouched, real-only
+    # X_test. This avoids the leakage of picking a threshold and reporting
+    # F1 on the same holdout set, which is optimistically biased.
+    real_trainval, X_test, real_y_trainval, y_test = train_test_split(
+        real_df[FEATURE_COLUMNS], real_df["is_fraud"], test_size=0.2, random_state=42, stratify=real_df["is_fraud"]
     )
+
+    synthetic_rows = load_approved_synthetic_rows()
+    if synthetic_rows:
+        synthetic_df = _to_frame(synthetic_rows)
+        X_trainval = pd.concat([real_trainval, synthetic_df[FEATURE_COLUMNS]], ignore_index=True)
+        y_trainval = pd.concat([real_y_trainval, synthetic_df["is_fraud"]], ignore_index=True)
+    else:
+        X_trainval, y_trainval = real_trainval, real_y_trainval
+
+    scale_pos_weight = compute_scale_pos_weight(y_trainval)
+    n_synthetic_in_trainval = len(synthetic_rows)
+
     X_train, X_val, y_train, y_val = train_test_split(
         X_trainval, y_trainval, test_size=0.2, random_state=42, stratify=y_trainval
     )
@@ -161,7 +196,9 @@ def train() -> XGBClassifier:
         model.fit(X_trainval, y_trainval)
 
         mlflow.log_params(model.get_params())
-        mlflow.log_param("n_rows_trained_on", len(df))
+        mlflow.log_param("n_rows_trained_on", len(X_trainval))
+        mlflow.log_param("n_real_rows_trained_on", len(real_trainval))
+        mlflow.log_param("n_synthetic_rows_trained_on", n_synthetic_in_trainval)
         mlflow.log_param("decision_threshold", decision_threshold)
         mlflow.xgboost.log_model(model, artifact_path="xgboost_model")
 
@@ -184,8 +221,10 @@ def train() -> XGBClassifier:
             mlflow.log_metric("holdout_roc_auc", roc_auc_score(y_test, y_prob))
             mlflow.log_metric("holdout_average_precision", average_precision_score(y_test, y_prob))
 
-        # 5-fold cross-validation, default 0.5 threshold (see module docstring)
-        cv_results = cross_validate(df, scale_pos_weight)
+        # 5-fold cross-validation, real data only regardless of augmentation
+        # (keeps CV folds free of the same test-leakage risk train() avoids
+        # above), default 0.5 threshold
+        cv_results = cross_validate(real_df, compute_scale_pos_weight(real_df["is_fraud"]))
         for key, value in cv_results.items():
             mlflow.log_metric(key, value)
 
@@ -196,7 +235,8 @@ def train() -> XGBClassifier:
         run_id = mlflow.active_run().info.run_id
         register_model(run_id, artifact_path="xgboost_model", registered_name=MODEL_NAME_XGBOOST)
 
-        print(f"Trained on {len(df)} rows (scale_pos_weight={scale_pos_weight:.2f})")
+        print(f"Trained on {len(X_trainval)} rows ({len(real_trainval)} real + "
+              f"{n_synthetic_in_trainval} synthetic), scale_pos_weight={scale_pos_weight:.2f}")
         print(f"Holdout @ default 0.5 threshold: precision={precision_default:.2f} "
               f"recall={recall_default:.2f} f1={f1_default:.2f}")
         print(f"Holdout @ tuned threshold {decision_threshold:.3f} (selected on a separate "
