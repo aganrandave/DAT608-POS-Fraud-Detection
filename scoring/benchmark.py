@@ -14,6 +14,7 @@ SAMPLE_PAYLOAD = {
     "geo_jump_km": 0.0,
     "bin_spend_rate": 12000.0,
     "terminal_reversal_count": 0,
+    "amount_ngn": 12000.0,
 }
 
 
