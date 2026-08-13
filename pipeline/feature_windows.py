@@ -9,8 +9,6 @@ from pyspark.sql.window import Window
 
 from geo import haversine_km
 
-haversine_km_udf = F.udf(haversine_km, "double")
-
 
 def with_velocity_1h(df: DataFrame) -> DataFrame:
     """Count of transactions per terminal within a trailing 1-hour window."""
@@ -24,6 +22,13 @@ def with_velocity_1h(df: DataFrame) -> DataFrame:
 
 def with_geo_jump(df: DataFrame) -> DataFrame:
     """Distance in km between a terminal's current and previous transaction."""
+    # F.udf() resolves its return-type string via the active SparkContext, so
+    # it can't be built at module import time - spark_consumer.py imports
+    # this module before creating its SparkSession, and building it there
+    # raised "RuntimeError: SparkContext or SparkSession should be created
+    # first" on every single run. Built lazily here instead, once a session
+    # is guaranteed to exist.
+    haversine_km_udf = F.udf(haversine_km, "double")
     window_spec = Window.partitionBy("terminal_id").orderBy("timestamp")
     prev_lat = F.lag("latitude").over(window_spec)
     prev_lon = F.lag("longitude").over(window_spec)
