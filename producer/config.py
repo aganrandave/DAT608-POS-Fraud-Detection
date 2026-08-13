@@ -1,6 +1,8 @@
 """Runtime configuration for the transaction generator and Kafka producer."""
 import os
 
+from nibss_distributions import FRAUD_RATE as _NIBSS_DEFAULT_FRAUD_RATE
+
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 KAFKA_TOPIC_TRANSACTIONS = os.getenv("KAFKA_TOPIC_TRANSACTIONS", "pos-transactions")
 
@@ -11,6 +13,6 @@ MERCHANTS_XLSX = os.getenv("MERCHANTS_XLSX", os.path.join(DATA_DIR, "reference",
 
 # Generation cadence
 TRANSACTIONS_PER_SECOND = float(os.getenv("TRANSACTIONS_PER_SECOND", "5"))
-FRAUD_RATE = float(os.getenv("FRAUD_RATE", "0.02"))
+FRAUD_RATE = float(os.getenv("FRAUD_RATE", str(_NIBSS_DEFAULT_FRAUD_RATE)))
 
 RANDOM_SEED = int(os.getenv("RANDOM_SEED", "42"))
