@@ -10,6 +10,7 @@ class FeatureRequest(BaseModel):
     geo_jump_km: float
     bin_spend_rate: float
     terminal_reversal_count: float
+    amount_ngn: float
 
 
 class ScoreResponse(BaseModel):

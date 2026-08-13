@@ -25,6 +25,7 @@ def test_high_risk_transaction_produces_alert():
         "geo_jump_km": 850.0,
         "bin_spend_rate": 145000.0,
         "terminal_reversal_count": 4,
+        "amount_ngn": 180000.0,
     }
 
     response = requests.post("http://localhost:8000/score", json=payload, timeout=10)

@@ -14,16 +14,34 @@ from tiers import tier_for_probability  # noqa: E402
 
 MODEL_VERSION = os.getenv("MODEL_VERSION", "v1")
 
+# Must match models/excel_reader.py's FEATURE_COLUMNS - that's what the
+# registered models were actually trained on. amount_vs_bin_avg_ratio isn't
+# collected directly from callers; it's derived in _feature_frame the same
+# way pipeline/feature_windows.py derives it (amount_ngn / bin_spend_rate).
 FEATURE_COLUMNS = [
     "velocity_1h",
     "geo_jump_km",
     "bin_spend_rate",
     "terminal_reversal_count",
+    "amount_ngn",
+    "amount_vs_bin_avg_ratio",
 ]
 
 # Blend weight applied to the XGBoost probability vs. the normalized
 # Isolation Forest anomaly score when computing fraud_probability.
 XGBOOST_WEIGHT = 0.7
+
+
+def derive_amount_vs_bin_avg_ratio(amount_ngn: float, bin_spend_rate: float) -> float:
+    """amount_ngn / bin_spend_rate, guarding the same zero-history edge case
+    that pipeline/feature_windows.py's Spark division silently nulls out.
+    bin_spend_rate is a trailing average that normally includes the current
+    transaction's own amount, so it's only ever 0 for a caller-supplied
+    placeholder - treat that as "no signal" rather than raising.
+    """
+    if bin_spend_rate <= 0:
+        return 0.0
+    return amount_ngn / bin_spend_rate
 
 
 class FraudScorer:
@@ -34,7 +52,11 @@ class FraudScorer:
     def _feature_frame(self, features: dict):
         import pandas as pd
 
-        return pd.DataFrame([[features[col] for col in FEATURE_COLUMNS]], columns=FEATURE_COLUMNS)
+        row = dict(features)
+        row["amount_vs_bin_avg_ratio"] = derive_amount_vs_bin_avg_ratio(
+            row["amount_ngn"], row["bin_spend_rate"]
+        )
+        return pd.DataFrame([[row[col] for col in FEATURE_COLUMNS]], columns=FEATURE_COLUMNS)
 
     def score(self, features: dict) -> dict:
         frame = self._feature_frame(features)
