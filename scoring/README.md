@@ -1,6 +1,6 @@
 # scoring
 
-FastAPI service that scores incoming feature vectors with the registered
+FastAPI service that scores incoming feature vectors with the known registered
 XGBoost + Isolation Forest models and persists the result.
 
 - `main.py` — `/health` and `/score` endpoints.
@@ -17,7 +17,7 @@ XGBoost + Isolation Forest models and persists the result.
 pip install -r scoring/requirements.txt
 uvicorn scoring.main:app --reload
 ```
-
+This is where the API is documented
 API docs: `http://localhost:8000/docs`
 
 ## Run via Docker
