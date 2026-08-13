@@ -5,6 +5,7 @@ from filelock import FileLock
 ALERTS_XLSX = "data/alerts.xlsx"
 FRAUD_SCORES_XLSX = "data/fraud_scores.xlsx"
 TERMINALS_XLSX = "data/reference/terminals.xlsx"
+MERCHANTS_XLSX = "data/reference/merchants.xlsx"
 
 
 def _read_rows(xlsx_path: str) -> list[dict]:
@@ -27,3 +28,7 @@ def load_fraud_scores() -> list[dict]:
 
 def load_terminals() -> list[dict]:
     return _read_rows(TERMINALS_XLSX)
+
+
+def load_merchants() -> list[dict]:
+    return _read_rows(MERCHANTS_XLSX)

@@ -3,7 +3,7 @@
 Named db.py to keep the import surface stable for pages/components even
 though the underlying store is the Excel workbook in data/, not a database.
 """
-from excel_reader import load_alerts, load_fraud_scores, load_terminals
+from excel_reader import load_alerts, load_fraud_scores, load_merchants, load_terminals
 
 
 def get_alerts() -> list[dict]:
@@ -16,3 +16,7 @@ def get_fraud_scores() -> list[dict]:
 
 def get_terminals() -> list[dict]:
     return load_terminals()
+
+
+def get_merchants() -> list[dict]:
+    return load_merchants()
