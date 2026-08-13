@@ -96,12 +96,20 @@ jobs:
           done
 
       - name: Assert infra + application services are running
+        # One docker compose ps call, parsed locally, rather than one call
+        # per service - 7 separate round-trips to a Docker daemon that's
+        # also serving a full Spark JVM, Kafka, ksqlDB, and MLflow under a
+        # 2-core/7GB runner has been observed to return inconsistent
+        # per-call snapshots (a service reported "Up" a second earlier
+        # showing "not found" on the very next call, with no exit event in
+        # between) - a single snapshot is internally consistent.
         run: |
           set -e
+          status="$(docker compose -f infra/docker-compose.yml ps --format '{{.Service}} {{.State}}')"
+          echo "$status"
           failed=0
           for svc in zookeeper kafka ksqldb-server mlflow producer pipeline dashboard; do
-            state=$(docker compose -f infra/docker-compose.yml ps --format '{{.Service}} {{.State}}' | awk -v s="$svc" '$1==s {print $2}')
-            echo "$svc: ${state:-not found}"
+            state=$(echo "$status" | awk -v s="$svc" '$1==s {print $2}')
             if [ "$state" != "running" ]; then
               echo "::error::$svc is not running (state=${state:-not found})"
               failed=1
@@ -109,7 +117,7 @@ jobs:
           done
           # scoring is a known, separately tracked gap - report its state but
           # don't fail the job on it (see the "Boot scoring" step above).
-          scoring_state=$(docker compose -f infra/docker-compose.yml ps --format '{{.Service}} {{.State}}' | awk '$1=="scoring" {print $2}')
+          scoring_state=$(echo "$status" | awk '$1=="scoring" {print $2}')
           echo "scoring: ${scoring_state:-not found} (not required to pass - see SCRUM-33/45)"
           exit $failed
 
