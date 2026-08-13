@@ -100,17 +100,13 @@ jobs:
             fi
           done
 
-      - name: Boot application services (producer, pipeline, dashboard)
-        run: docker compose -f infra/docker-compose.yml up -d producer pipeline dashboard
-
-      - name: Boot scoring
-        # Known, tracked gap (SCRUM-33/45): scoring/main.py loads Production-
-        # stage models from MLflow at import time, and a fresh compose run has
-        # an empty mlruns volume with nothing registered yet - so scoring is
-        # expected to crash here until that bootstrap step exists. Boot it
-        # anyway so its logs show the real failure mode instead of hiding it,
-        # but don't let it fail this step.
-        run: docker compose -f infra/docker-compose.yml up -d scoring || true
+      - name: Boot application services (producer, pipeline, scoring, dashboard)
+        # scoring used to crash here every time - a fresh compose run has an
+        # empty mlruns volume with nothing registered, and FraudScorer used
+        # to call load_latest_model() straight from __init__. Now it loads
+        # lazily and survives a cold boot (see scoring/scorer.py), so it's
+        # a normal required service here rather than a soft-failed one.
+        run: docker compose -f infra/docker-compose.yml up -d producer pipeline scoring dashboard
 
       - name: Give application services time to settle
         # pipeline resolves the spark-sql-kafka connector from Maven at
@@ -144,18 +140,33 @@ jobs:
           status="$(docker compose -f infra/docker-compose.yml ps --format '{{.Service}} {{.State}}')"
           echo "$status"
           failed=0
-          for svc in zookeeper kafka ksqldb-server mlflow producer pipeline dashboard; do
+          for svc in zookeeper kafka ksqldb-server mlflow producer pipeline scoring dashboard; do
             state=$(echo "$status" | awk -v s="$svc" '$1==s {print $2}')
             if [ "$state" != "running" ]; then
               echo "::error::$svc is not running (state=${state:-not found})"
               failed=1
             fi
           done
-          # scoring is a known, separately tracked gap - report its state but
-          # don't fail the job on it (see the "Boot scoring" step above).
-          scoring_state=$(echo "$status" | awk '$1=="scoring" {print $2}')
-          echo "scoring: ${scoring_state:-not found} (not required to pass - see SCRUM-33/45)"
           exit $failed
+
+      - name: Assert scoring's /health responds and self-reports not-ready
+        # A running container isn't proof the app inside actually started -
+        # confirm uvicorn is really serving requests, and that it's honest
+        # about not having models yet rather than crashing on the first
+        # /score call it receives.
+        run: |
+          set -e
+          health=$(curl -sf http://localhost:8000/health)
+          echo "$health"
+          echo "$health" | grep -q '"models_ready":false' \
+            || { echo "::error::expected models_ready:false on a fresh boot with nothing registered"; exit 1; }
+          score_status=$(curl -s -o /tmp/score-response.json -w '%{http_code}' -X POST http://localhost:8000/score \
+            -H "Content-Type: application/json" \
+            -d '{"transaction_id":"ci-test","terminal_id":"TRM00001","card_bin":"539983","velocity_1h":1,"geo_jump_km":0,"bin_spend_rate":1000,"terminal_reversal_count":0,"amount_ngn":1000}')
+          cat /tmp/score-response.json
+          echo
+          [ "$score_status" = "503" ] \
+            || { echo "::error::expected 503 (models not ready) from /score, got $score_status"; exit 1; }
 
       - name: Assert producer and pipeline actually reached Kafka
         # "running" alone isn't proof of working: an earlier run showed
