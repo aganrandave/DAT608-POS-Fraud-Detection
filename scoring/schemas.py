@@ -26,3 +26,4 @@ class ScoreResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     model_version: str
+    models_ready: bool
