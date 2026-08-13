@@ -7,7 +7,7 @@ transactions, composed of seven layers that communicate over Kafka and
 persist state to Git-tracked Excel workbooks under [`data/`](../data/).
 
 ```
-producer -> Kafka(pos-transactions) -> pipeline -> Kafka(pos-features)
+POS terminal API layer simulator -> Kafka(pos-transactions) -> pipeline -> Kafka(pos-features)
                                                           |
                                                           v
                                               models (offline training, MLflow)
@@ -26,7 +26,7 @@ producer -> Kafka(pos-transactions) -> pipeline -> Kafka(pos-features)
 
 | Layer | Responsibility | Reads | Writes |
 |---|---|---|---|
-| [producer](../producer/README.md) | Generates synthetic transactions, publishes to Kafka | `data/reference/*.xlsx` | `data/transactions_raw.xlsx` |
+| [simulator](../producer/README.md) | Generates synthetic transactions, publishes to Kafka | `data/reference/*.xlsx` | `data/transactions_raw.xlsx` |
 | [pipeline](../pipeline/README.md) | Spark Structured Streaming windowed feature engineering | Kafka `pos-transactions` | `data/features.xlsx` |
 | [models](../models/README.md) | Trains XGBoost + Isolation Forest, tracked in MLflow | `data/features.xlsx`, `data/transactions_raw.xlsx` | MLflow model registry |
 | [scoring](../scoring/README.md) | FastAPI service blending both models into a fraud probability | MLflow registry | `data/fraud_scores.xlsx` |
