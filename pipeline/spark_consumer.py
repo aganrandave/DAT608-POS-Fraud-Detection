@@ -1,9 +1,29 @@
 """Spark Structured Streaming job: Kafka transactions -> engineered features.
 
-Reads raw transaction JSON from the pos-transactions Kafka topic, applies
-the windowed feature transforms in feature_windows.py, and writes each
-micro-batch to data/features.xlsx via excel_writer.write_batch, in addition
-to publishing the enriched stream back to Kafka for the scoring service.
+Reads raw transaction JSON from the pos-transactions Kafka topic and writes
+each micro-batch's windowed features to data/features.xlsx via
+excel_writer.write_batch.
+
+feature_windows.build_features() is applied inside the foreachBatch
+callback, not on the streaming DataFrame itself. Structured Streaming only
+supports time-window aggregation with watermarks - the arbitrary
+partition/order/rangeBetween window functions build_features() uses
+(velocity_1h, bin_spend_rate, terminal_reversal_count) raise
+NON_TIME_WINDOW_NOT_SUPPORTED_IN_STREAMING if applied directly to a
+streaming DataFrame. Each call to foreachBatch's callback receives a
+static, non-streaming DataFrame for that one micro-batch, where those same
+window functions are ordinary batch Spark SQL and work fine.
+
+Known limitation from that split, not hidden: each window function only
+sees rows within its own micro-batch, not the full trailing 1h/24h history
+across the stream - a true unbounded trailing window would need stateful
+streaming (mapGroupsWithState) or a restructure around F.window() with
+watermarks, out of scope here. The offline batch path
+(batch_feature_engineering.py, used for all model training and CTGAN
+validation this project's models are actually built on) already computes
+genuine full-history trailing windows over pandas; this live path exists
+to demonstrate the streaming wiring works end to end, not to duplicate
+that exact semantics online.
 """
 import os
 
@@ -16,7 +36,6 @@ from schema import TRANSACTION_SCHEMA
 
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 KAFKA_TOPIC_TRANSACTIONS = os.getenv("KAFKA_TOPIC_TRANSACTIONS", "pos-transactions")
-KAFKA_TOPIC_FEATURES = os.getenv("KAFKA_TOPIC_FEATURES", "pos-features")
 CHECKPOINT_DIR = os.getenv("SPARK_CHECKPOINT_DIR", "/tmp/spark-checkpoints")
 
 
@@ -55,11 +74,16 @@ def run() -> None:
         F.from_json(F.col("value").cast("string"), TRANSACTION_SCHEMA).alias("txn")
     ).select("txn.*")
 
-    features = build_features(transactions)
+    def process_batch(batch_df, batch_id: int) -> None:
+        """batch_df is a static DataFrame for this one micro-batch (not the
+        streaming DataFrame) - see the module docstring for why the window
+        functions in build_features() have to run here rather than upstream."""
+        features_df = build_features(batch_df)
+        write_batch(features_df, batch_id)
 
     query = (
-        features.writeStream.outputMode("append")
-        .foreachBatch(write_batch)
+        transactions.writeStream.outputMode("append")
+        .foreachBatch(process_batch)
         .option("checkpointLocation", os.path.join(CHECKPOINT_DIR, "features"))
         .start()
     )
