@@ -1,4 +1,4 @@
-# producer
+# POS terminal API layer simulator (producer)
 
 Generates synthetic Nigerian POS transactions and streams them to Kafka.
 
