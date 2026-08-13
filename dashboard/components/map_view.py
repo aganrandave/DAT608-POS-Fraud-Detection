@@ -5,20 +5,32 @@ previously - st.map cannot color individual points, which made it
 impossible to tell a critical-tier terminal from a flagged-but-low-risk
 one at a glance. No Mapbox token is required: pydeck falls back to its
 built-in Carto basemap when none is configured.
+
+pydeck and streamlit are imported inside render_terminal_map, not at
+module level, so _terminal_rows (the pure data-shaping logic) stays
+importable and unit-testable without either installed - same reasoning
+as components/filters.py and components/metrics_panel.py.
 """
 import pandas as pd
-import pydeck as pdk
-import streamlit as st
 
 from components.tier_colors import TIER_HEX, UNFLAGGED_HEX, highest_severity_tier, tier_rgb
 
-NIGERIA_VIEW = pdk.ViewState(latitude=9.0820, longitude=8.6753, zoom=5.2)
+NIGERIA_CENTER = (9.0820, 8.6753)  # (latitude, longitude) - plain tuple, not a pdk object,
+# so this stays available without importing pydeck at module level.
 
 
-def _terminal_rows(terminals: list[dict], alerts: list[dict]) -> pd.DataFrame:
+def _terminal_rows(terminals: list[dict], alerts: list[dict], merchants: list[dict] | None = None) -> pd.DataFrame:
     tiers_by_terminal: dict[str, list[str]] = {}
+    max_prob_by_terminal: dict[str, float] = {}
+    count_by_terminal: dict[str, int] = {}
     for a in alerts:
-        tiers_by_terminal.setdefault(a["terminal_id"], []).append(a["alert_tier"])
+        tid = a["terminal_id"]
+        tiers_by_terminal.setdefault(tid, []).append(a["alert_tier"])
+        count_by_terminal[tid] = count_by_terminal.get(tid, 0) + 1
+        prob = a.get("fraud_probability") or 0.0
+        max_prob_by_terminal[tid] = max(max_prob_by_terminal.get(tid, 0.0), prob)
+
+    merchant_names = {m["merchant_id"]: m["merchant_name"] for m in (merchants or [])}
 
     df = pd.DataFrame(terminals)
     if df.empty:
@@ -28,11 +40,17 @@ def _terminal_rows(terminals: list[dict], alerts: list[dict]) -> pd.DataFrame:
     df["flagged"] = df["tier"].notna()
     df["color"] = df["tier"].apply(tier_rgb)
     df["tier_label"] = df["tier"].fillna("none")
+    df["merchant_name"] = df["merchant_id"].map(merchant_names).fillna(df["merchant_id"])
+    df["alert_count"] = df["terminal_id"].map(count_by_terminal).fillna(0).astype(int)
+    df["fraud_probability_pct"] = (df["terminal_id"].map(max_prob_by_terminal).fillna(0.0) * 100).round(1)
     return df.rename(columns={"latitude": "lat", "longitude": "lon"})
 
 
-def render_terminal_map(terminals: list[dict], alerts: list[dict]) -> None:
-    df = _terminal_rows(terminals, alerts)
+def render_terminal_map(terminals: list[dict], alerts: list[dict], merchants: list[dict] | None = None) -> None:
+    import pydeck as pdk
+    import streamlit as st
+
+    df = _terminal_rows(terminals, alerts, merchants)
     if df.empty:
         st.info("No terminal reference data available.")
         return
@@ -50,9 +68,10 @@ def render_terminal_map(terminals: list[dict], alerts: list[dict]) -> None:
         line_width_min_pixels=1,
     )
 
+    default_lat, default_lon = NIGERIA_CENTER
     view_state = pdk.ViewState(
-        latitude=float(df["lat"].mean()) if len(df) else NIGERIA_VIEW.latitude,
-        longitude=float(df["lon"].mean()) if len(df) else NIGERIA_VIEW.longitude,
+        latitude=float(df["lat"].mean()) if len(df) else default_lat,
+        longitude=float(df["lon"].mean()) if len(df) else default_lon,
         zoom=5.5,
     )
 
@@ -60,7 +79,11 @@ def render_terminal_map(terminals: list[dict], alerts: list[dict]) -> None:
         pdk.Deck(
             layers=[layer],
             initial_view_state=view_state,
-            tooltip={"text": "{terminal_name}\n{state}, {lga}\nAlert tier: {tier_label}"},
+            tooltip={
+                "text": "{terminal_id} - {merchant_name}\n"
+                "Fraud probability: {fraud_probability_pct}%\n"
+                "Open alerts: {alert_count} ({tier_label})"
+            },
         )
     )
 
