@@ -51,6 +51,12 @@ services:
       - kafka
     env_file:
       - ../.env
+    environment:
+      # .env's KAFKA_BOOTSTRAP_SERVERS=localhost:9092 is correct for a
+      # process running on the host, not for a container - localhost inside
+      # this container is its own loopback, not kafka's. Override to the
+      # in-network service DNS name; takes precedence over env_file.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     volumes:
       - ../data:/app/data
 
@@ -62,6 +68,8 @@ services:
       - kafka
     env_file:
       - ../.env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     volumes:
       - ../data:/app/data
 
@@ -74,6 +82,9 @@ services:
       - mlflow
     env_file:
       - ../.env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      MLFLOW_TRACKING_URI: http://mlflow:5000
     ports:
       - "8000:8000"
     volumes:

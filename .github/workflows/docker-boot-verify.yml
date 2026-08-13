@@ -121,6 +121,27 @@ jobs:
           echo "scoring: ${scoring_state:-not found} (not required to pass - see SCRUM-33/45)"
           exit $failed
 
+      - name: Assert producer and pipeline actually reached Kafka
+        # "running" alone isn't proof of working: an earlier run showed
+        # pipeline as "running" while its logs were stuck retrying
+        # "Connection to node -1 (localhost/127.0.0.1:9092) could not be
+        # established" for the entire job - it never crashed, it just never
+        # connected (root cause: KAFKA_BOOTSTRAP_SERVERS defaulted to
+        # localhost:9092, wrong for a container - fixed via an environment:
+        # override in infra/docker-compose.yml). A container that's alive
+        # but stuck retrying the wrong address would pass the state check
+        # above and shouldn't.
+        run: |
+          set -e
+          failed=0
+          for svc in producer pipeline; do
+            if docker compose -f infra/docker-compose.yml logs "$svc" | grep -q "could not be established"; then
+              echo "::error::$svc logged a Kafka connection failure - it's alive but not actually connected"
+              failed=1
+            fi
+          done
+          exit $failed
+
       - name: Tear down
         if: always()
         run: docker compose -f infra/docker-compose.yml down -v
