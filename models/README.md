@@ -1,6 +1,5 @@
 # models
-
-Model training, evaluation, and MLflow registry code for the fraud-scoring
+This documents the Model training, evaluation, and MLflow registry code for the fraud-scoring
 ensemble.
 
 - `excel_reader.py` — loads `data/features.xlsx`, joined against `data/transactions_raw.xlsx` for labels.
