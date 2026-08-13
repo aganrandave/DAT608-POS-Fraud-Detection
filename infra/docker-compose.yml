@@ -17,6 +17,14 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      # ksqlDB's command topic uses a transactional producer internally.
+      # These both default to values >1, which a single-broker cluster can
+      # never satisfy - every CREATE STREAM/TABLE timed out after 60s with
+      # "Timeout expired while awaiting InitProducerId" as a result. Never
+      # caught before because ksqlDB had never actually been exercised
+      # against this broker until docker-boot-verify's SCRUM-34 step.
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
     ports:
       - "9092:9092"
 

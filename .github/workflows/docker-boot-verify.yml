@@ -64,6 +64,42 @@ jobs:
           docker compose -f infra/docker-compose.yml cp infra/kafka/kafka_setup.sh kafka:/tmp/kafka_setup.sh
           docker compose -f infra/docker-compose.yml exec -T kafka bash /tmp/kafka_setup.sh
 
+      - name: Create ksqlDB streams (SCRUM-34, reuses alerts/streams/01+02)
+        # Port being reachable (the earlier wait_for_port check) isn't the
+        # same as the KSQL engine being ready to accept DDL - poll /info
+        # first. jq builds the request body so the SQL file's own quoting
+        # doesn't need to survive a shell string escape.
+        run: |
+          for i in $(seq 1 24); do
+            if curl -sf http://localhost:8088/info >/dev/null 2>&1; then break; fi
+            sleep 5
+          done
+          # No -f here deliberately: a failed KSQL statement returns a JSON
+          # error body with a useful message, which -f would discard right
+          # when it's most needed. Check the HTTP status explicitly instead.
+          post_ksql() {
+            status=$(jq -n --arg ksql "$(cat "$1")" '{ksql: $ksql, streamsProperties: {}}' \
+              | curl -s -o /tmp/ksql-response.json -w '%{http_code}' -X POST http://localhost:8088/ksql \
+                  -H "Content-Type: application/vnd.ksql.v1+json" -d @-)
+            echo "$1 -> HTTP $status"
+            cat /tmp/ksql-response.json
+            echo
+            [ "$status" = "200" ]
+          }
+          post_ksql alerts/streams/01_create_source_stream.sql
+          post_ksql alerts/streams/02_create_scored_stream.sql
+          echo "Streams now registered:"
+          jq -n '{ksql: "SHOW STREAMS;", streamsProperties: {}}' \
+            | curl -s -X POST http://localhost:8088/ksql \
+                -H "Content-Type: application/vnd.ksql.v1+json" -d @- \
+            | tee /tmp/ksql-streams.json
+          for stream in TRANSACTIONS_STREAM SCORED_STREAM; do
+            if ! grep -q "$stream" /tmp/ksql-streams.json; then
+              echo "::error::$stream was not created"
+              exit 1
+            fi
+          done
+
       - name: Boot application services (producer, pipeline, dashboard)
         run: docker compose -f infra/docker-compose.yml up -d producer pipeline dashboard
 
