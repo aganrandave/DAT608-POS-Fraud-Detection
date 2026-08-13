@@ -77,7 +77,10 @@ jobs:
         run: docker compose -f infra/docker-compose.yml up -d scoring || true
 
       - name: Give application services time to settle
-        run: sleep 30
+        # pipeline resolves the spark-sql-kafka connector from Maven at
+        # session startup (see spark_consumer.py), which takes longer than
+        # the other services' plain process start.
+        run: sleep 60
 
       - name: Report container status
         if: always()

@@ -21,8 +21,14 @@ CHECKPOINT_DIR = os.getenv("SPARK_CHECKPOINT_DIR", "/tmp/spark-checkpoints")
 
 
 def build_spark_session() -> SparkSession:
+    # readStream.format("kafka") needs the spark-sql-kafka connector on the
+    # classpath - it isn't bundled in the base Spark image, so every prior
+    # run failed at .load() with "Failed to find data source: kafka".
+    # spark.jars.packages resolves it (and its transitive deps) from Maven
+    # at session startup rather than requiring a pre-baked image.
     return (
         SparkSession.builder.appName("pos-fraud-feature-pipeline")
+        .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1")
         .config("spark.sql.shuffle.partitions", "4")
         .getOrCreate()
     )
