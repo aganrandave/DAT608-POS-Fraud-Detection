@@ -59,7 +59,7 @@ gpg --armor --export <KEY_ID>   # paste this into GitHub Settings > SSH and GPG 
 
 - These `git config --global` settings apply to every repo on your
   machine, not just this one — that's the standard/recommended setup.
-- If you already had commits queued up before doing this, re-sign them
+- If you already had commits queued up before doing this step, re-sign them
   with `git commit --amend -S --no-edit` (last commit) or an interactive
   rebase (`git rebase --exec 'git commit --amend --no-edit -S' -i <base>`)
   for a range — only necessary for commits not yet merged into `main`.
