@@ -24,8 +24,14 @@ def build_spark_session() -> SparkSession:
     # readStream.format("kafka") needs the spark-sql-kafka connector on the
     # classpath - it isn't bundled in the base Spark image, so every prior
     # run failed at .load() with "Failed to find data source: kafka".
-    # spark.jars.packages resolves it (and its transitive deps) from Maven
-    # at session startup rather than requiring a pre-baked image.
+    # The real fix is pipeline/Dockerfile's spark-submit --packages flag:
+    # package resolution happens during spark-submit's own launch phase,
+    # before the JVM classloader is fixed, so setting spark.jars.packages
+    # here from inside the driver is too late once launched via
+    # spark-submit (confirmed - it silently did nothing). Kept here too as
+    # a fallback for the case where this module is imported and run
+    # directly (python spark_consumer.py) rather than via spark-submit,
+    # where builder.config() is the only mechanism available.
     return (
         SparkSession.builder.appName("pos-fraud-feature-pipeline")
         .config("spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1")

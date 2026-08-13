@@ -16,4 +16,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY pipeline/ ./
 COPY data/ /app/data/
 
-CMD ["spark-submit", "spark_consumer.py"]
+# --packages must be a spark-submit launch flag, not something set from
+# spark_consumer.py's SparkSession.builder.config() - package resolution
+# happens during spark-submit's own launch phase, before the JVM classloader
+# is fixed and before any Python driver code runs, so setting it from inside
+# the driver is silently too late (confirmed: it did nothing, no download
+# ever ran, same "Failed to find data source: kafka" error either way).
+CMD ["spark-submit", "--packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1", "spark_consumer.py"]
