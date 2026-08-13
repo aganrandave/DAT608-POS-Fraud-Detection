@@ -23,15 +23,11 @@ from datetime import date, timedelta
 import openpyxl
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "producer"))
-from nibss_distributions import STATE_LGAS  # noqa: E402
+from nibss_distributions import MERCHANT_CATEGORIES, OPERATORS, STATE_LGAS  # noqa: E402
 from transaction_generator import TERMINAL_REGISTRY  # noqa: E402
 
 RANDOM_SEED = 42
-OPERATORS = ["Moniepoint", "Opay", "Palmpay", "Interswitch Quickteller", "Paystack Terminal"]
-CATEGORIES = [
-    "Retail", "Groceries", "Electronics", "Fashion", "Pharmacy",
-    "Restaurant", "Fuel Station", "Supermarket", "Hospitality", "Services",
-]
+CATEGORIES = list(MERCHANT_CATEGORIES)
 BUSINESS_SUFFIXES = ["Ltd", "Stores", "Enterprises", "Plaza", "Mart", "Concepts", "Ventures"]
 
 TERMINALS_XLSX = os.path.join(os.path.dirname(__file__), "..", "data", "reference", "terminals.xlsx")

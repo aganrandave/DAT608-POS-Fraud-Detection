@@ -28,9 +28,16 @@ def append_features(rows: list[dict], xlsx_path: str = FEATURES_XLSX) -> None:
     with FileLock(lock_path, timeout=30):
         wb = openpyxl.load_workbook(xlsx_path)
         ws = wb.active
-        for row in rows:
+        # Spark's foreachBatch guarantees at-least-once delivery, so a
+        # replayed micro-batch (e.g. after a consumer restart) can hand the
+        # same transaction_id to write_batch twice - skip transaction_ids
+        # already on disk so a replay doesn't duplicate rows.
+        existing_ids = {row[0] for row in ws.iter_rows(min_row=2, max_col=1, values_only=True)}
+        new_rows = [row for row in rows if row["transaction_id"] not in existing_ids]
+        for row in new_rows:
             ws.append([row[col] for col in COLUMNS])
-        wb.save(xlsx_path)
+        if new_rows:
+            wb.save(xlsx_path)
 
 
 def write_batch(batch_df, batch_id: int) -> None:

@@ -1,5 +1,7 @@
 # DAT608 — POS Agent Fraud Detection
 
+[![CI](https://github.com/aganrandave/DAT608-POS-Fraud-Detection/actions/workflows/ci.yml/badge.svg)](https://github.com/aganrandave/DAT608-POS-Fraud-Detection/actions/workflows/ci.yml)
+
 A real-time fraud detection system for Nigerian point-of-sale (POS) agent
 transactions. Synthetic transactions are streamed through Kafka, enriched
 with rolling features in Spark Structured Streaming, scored by an ensemble
