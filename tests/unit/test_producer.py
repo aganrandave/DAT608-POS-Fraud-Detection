@@ -47,3 +47,17 @@ def test_inject_fraud_marks_transaction_as_fraud():
 def test_amount_is_positive():
     txn = generate_transaction()
     assert txn["amount_ngn"] > 0
+
+
+def test_fraud_type_is_empty_when_not_fraud():
+    # "" rather than None: this project writes transactions straight to
+    # Excel via openpyxl, and an empty string round-trips through a
+    # workbook cell more predictably than a Python None would.
+    txn = generate_transaction()
+    if not txn["is_fraud"]:
+        assert txn["fraud_type"] == ""
+
+
+def test_fraud_rate_is_approximately_2_percent_over_1000_records():
+    fraud_count = sum(1 for _ in range(1000) if generate_transaction()["is_fraud"])
+    assert 15 <= fraud_count <= 25  # 1.5%-2.5% of 1000
