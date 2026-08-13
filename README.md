@@ -18,7 +18,7 @@ DAT608 Big Data capstone at Pan-Atlantic University.
 | Ololade Ajaegbu     | ML Engineer | [Ololade-ajaegbu](https://github.com/Ololade-ajaegbu) | models |
 | Oluwatiseunla Abdul     | Data Scientist | [Oluwatiseunla](https://github.com/Oluwatiseunla) | scoring |
 | John Babalola     | Data Engineer | [john-babalola1307](https://github.com/john-babalola1307) | producer, pipeline, alerts |
-| Jesselyn Ayanka | Data Management | Jessayanka005(https://github.com/Jessayanka005) | infra, docker |
+| Jesselyn Ayanka | Data Management | [Jessayanka005](https://github.com/Jessayanka005) | infra, docker |
 Unstaffed layers (dashboard, infra, tests, docs) default to the EM/PM until a
 named owner is assigned — see [`.github/CODEOWNERS`](.github/CODEOWNERS) for
 the enforced mapping.
@@ -47,10 +47,22 @@ the enforced mapping.
 
 All services are orchestrated with Docker Compose — see [infra/README.md](infra/README.md).
 
+## Layers
+
+| Layer | README |
+|---|---|
+| producer — synthetic transactions & Kafka producer | [producer/README.md](producer/README.md) |
+| pipeline — Spark Structured Streaming feature engineering | [pipeline/README.md](pipeline/README.md) |
+| models — XGBoost + Isolation Forest, MLflow | [models/README.md](models/README.md) |
+| scoring — FastAPI scoring service | [scoring/README.md](scoring/README.md) |
+| alerts — ksqlDB alert logic | [alerts/README.md](alerts/README.md) |
+| dashboard — Streamlit UI | [dashboard/README.md](dashboard/README.md) |
+| infra — Docker Compose orchestration | [infra/README.md](infra/README.md) |
+
 ## Quickstart
 
 ```bash
-git clone https://github.com/oluwaseun-aganran/DAT608-POS-Fraud-Detection.git
+git clone https://github.com/aganrandave/DAT608-POS-Fraud-Detection.git
 cd DAT608-POS-Fraud-Detection
 cp .env.example .env
 docker-compose up --build
