@@ -44,10 +44,37 @@ def derive_amount_vs_bin_avg_ratio(amount_ngn: float, bin_spend_rate: float) -> 
     return amount_ngn / bin_spend_rate
 
 
+class ModelsNotReadyError(RuntimeError):
+    """Raised when /score is called before both models are registered."""
+
+
 class FraudScorer:
     def __init__(self):
-        self.xgboost_model = load_latest_model("pos-fraud-xgboost")
-        self.isolation_forest_model = load_latest_model("pos-fraud-isolation-forest")
+        self.xgboost_model = None
+        self.isolation_forest_model = None
+        self.load_error: str | None = None
+        self.try_load()
+
+    def try_load(self) -> bool:
+        """Attempt to (re)load both models from the MLflow registry. Safe to
+        call repeatedly - a fresh docker-compose boot has an empty mlruns
+        volume with nothing registered yet, and this app used to call
+        load_latest_model() straight from __init__, which crashed the whole
+        FastAPI process before uvicorn ever bound the port. Retrying here
+        instead lets the service start and report its own readiness
+        honestly via /health, rather than never starting at all."""
+        try:
+            self.xgboost_model = load_latest_model("pos-fraud-xgboost")
+            self.isolation_forest_model = load_latest_model("pos-fraud-isolation-forest")
+            self.load_error = None
+            return True
+        except Exception as exc:  # noqa: BLE001 - any registry failure just means "not ready yet"
+            self.load_error = str(exc)
+            return False
+
+    @property
+    def is_ready(self) -> bool:
+        return self.xgboost_model is not None and self.isolation_forest_model is not None
 
     def _feature_frame(self, features: dict):
         import pandas as pd
@@ -59,6 +86,9 @@ class FraudScorer:
         return pd.DataFrame([[row[col] for col in FEATURE_COLUMNS]], columns=FEATURE_COLUMNS)
 
     def score(self, features: dict) -> dict:
+        if not self.is_ready and not self.try_load():
+            raise ModelsNotReadyError(self.load_error or "models not yet registered")
+
         frame = self._feature_frame(features)
 
         xgboost_score = float(self.xgboost_model.predict(frame)[0])
