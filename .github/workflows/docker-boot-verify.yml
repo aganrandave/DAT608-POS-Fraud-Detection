@@ -1,0 +1,126 @@
+name: Docker Boot Verification
+
+# Builds every custom image and boots the real infra/docker-compose.yml
+# topology on GitHub's hosted runner, which has Docker preinstalled -
+# unlike the coding agent's own environment (see SCRUM-20, SCRUM-27,
+# SCRUM-33, SCRUM-42, all of which were blocked on "no Docker available
+# here"). Runs automatically when Docker-relevant files change, and can
+# be triggered manually at any time via workflow_dispatch.
+on:
+  pull_request:
+    paths:
+      - "**/Dockerfile"
+      - "docker-compose.yml"
+      - "infra/docker-compose.yml"
+      - "infra/docker-compose.dev.yml"
+      - ".env.example"
+      - "infra/.env.example"
+      - "infra/kafka/kafka_setup.sh"
+      - ".github/workflows/docker-boot-verify.yml"
+  workflow_dispatch: {}
+
+jobs:
+  docker-boot-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Prepare env files
+        run: |
+          cp .env.example .env
+          cp infra/.env.example infra/.env
+
+      - name: Build all application images
+        run: docker compose -f infra/docker-compose.yml build
+
+      - name: Boot infra services (Zookeeper, Kafka, ksqlDB, MLflow)
+        run: docker compose -f infra/docker-compose.yml up -d zookeeper kafka ksqldb-server mlflow
+
+      - name: Wait for infra services to become reachable
+        run: |
+          wait_for_port() {
+            local name=$1 port=$2
+            echo "Waiting for $name on port $port..."
+            for i in $(seq 1 36); do
+              if (echo > "/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
+                echo "$name is reachable"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "::error::$name did not become reachable on port $port within the timeout"
+            return 1
+          }
+          wait_for_port zookeeper 2181
+          wait_for_port kafka 9092
+          wait_for_port ksqldb-server 8088
+          wait_for_port mlflow 5000
+
+      - name: Create Kafka topics (reuses infra/kafka/kafka_setup.sh)
+        run: |
+          docker compose -f infra/docker-compose.yml cp infra/kafka/kafka_setup.sh kafka:/tmp/kafka_setup.sh
+          docker compose -f infra/docker-compose.yml exec -T kafka bash /tmp/kafka_setup.sh
+
+      - name: Boot application services (producer, pipeline, dashboard)
+        run: docker compose -f infra/docker-compose.yml up -d producer pipeline dashboard
+
+      - name: Boot scoring
+        # Known, tracked gap (SCRUM-33/45): scoring/main.py loads Production-
+        # stage models from MLflow at import time, and a fresh compose run has
+        # an empty mlruns volume with nothing registered yet - so scoring is
+        # expected to crash here until that bootstrap step exists. Boot it
+        # anyway so its logs show the real failure mode instead of hiding it,
+        # but don't let it fail this step.
+        run: docker compose -f infra/docker-compose.yml up -d scoring || true
+
+      - name: Give application services time to settle
+        # pipeline resolves the spark-sql-kafka connector from Maven at
+        # session startup (see spark_consumer.py), which takes longer than
+        # the other services' plain process start.
+        run: sleep 60
+
+      - name: Report container status
+        if: always()
+        run: docker compose -f infra/docker-compose.yml ps
+
+      - name: Dump logs for every service
+        if: always()
+        run: |
+          for svc in zookeeper kafka ksqldb-server mlflow producer pipeline scoring dashboard; do
+            echo "::group::$svc logs"
+            docker compose -f infra/docker-compose.yml logs --tail=80 "$svc" || true
+            echo "::endgroup::"
+          done
+
+      - name: Assert infra + application services are running
+        # One docker compose ps call, parsed locally, rather than one call
+        # per service - 7 separate round-trips to a Docker daemon that's
+        # also serving a full Spark JVM, Kafka, ksqlDB, and MLflow under a
+        # 2-core/7GB runner has been observed to return inconsistent
+        # per-call snapshots (a service reported "Up" a second earlier
+        # showing "not found" on the very next call, with no exit event in
+        # between) - a single snapshot is internally consistent.
+        run: |
+          set -e
+          status="$(docker compose -f infra/docker-compose.yml ps --format '{{.Service}} {{.State}}')"
+          echo "$status"
+          failed=0
+          for svc in zookeeper kafka ksqldb-server mlflow producer pipeline dashboard; do
+            state=$(echo "$status" | awk -v s="$svc" '$1==s {print $2}')
+            if [ "$state" != "running" ]; then
+              echo "::error::$svc is not running (state=${state:-not found})"
+              failed=1
+            fi
+          done
+          # scoring is a known, separately tracked gap - report its state but
+          # don't fail the job on it (see the "Boot scoring" step above).
+          scoring_state=$(echo "$status" | awk '$1=="scoring" {print $2}')
+          echo "scoring: ${scoring_state:-not found} (not required to pass - see SCRUM-33/45)"
+          exit $failed
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v
