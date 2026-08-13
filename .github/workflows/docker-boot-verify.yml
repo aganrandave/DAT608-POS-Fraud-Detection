@@ -74,17 +74,23 @@ jobs:
             if curl -sf http://localhost:8088/info >/dev/null 2>&1; then break; fi
             sleep 5
           done
+          # No -f here deliberately: a failed KSQL statement returns a JSON
+          # error body with a useful message, which -f would discard right
+          # when it's most needed. Check the HTTP status explicitly instead.
           post_ksql() {
-            jq -n --arg ksql "$(cat "$1")" '{ksql: $ksql, streamsProperties: {}}' \
-              | curl -sf -X POST http://localhost:8088/ksql \
-                  -H "Content-Type: application/vnd.ksql.v1+json" -d @-
+            status=$(jq -n --arg ksql "$(cat "$1")" '{ksql: $ksql, streamsProperties: {}}' \
+              | curl -s -o /tmp/ksql-response.json -w '%{http_code}' -X POST http://localhost:8088/ksql \
+                  -H "Content-Type: application/vnd.ksql.v1+json" -d @-)
+            echo "$1 -> HTTP $status"
+            cat /tmp/ksql-response.json
             echo
+            [ "$status" = "200" ]
           }
           post_ksql alerts/streams/01_create_source_stream.sql
           post_ksql alerts/streams/02_create_scored_stream.sql
           echo "Streams now registered:"
           jq -n '{ksql: "SHOW STREAMS;", streamsProperties: {}}' \
-            | curl -sf -X POST http://localhost:8088/ksql \
+            | curl -s -X POST http://localhost:8088/ksql \
                 -H "Content-Type: application/vnd.ksql.v1+json" -d @- \
             | tee /tmp/ksql-streams.json
           for stream in TRANSACTIONS_STREAM SCORED_STREAM; do
