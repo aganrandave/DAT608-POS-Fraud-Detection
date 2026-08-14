@@ -300,11 +300,23 @@ jobs:
           fi
 
       - name: Install model training dependencies
-        # Deliberately not models/requirements.txt as-is - sdv/torch/seaborn
-        # are only needed for CTGAN synthetic augmentation, which is off by
-        # default (USE_SYNTHETIC_AUGMENTATION unset) and would add several
-        # minutes of install time for nothing exercised here.
-        run: pip install mlflow==2.15.1 pandas==2.2.2 openpyxl==3.1.5 filelock==3.32.2 xgboost==2.1.1 scikit-learn==1.9.0 matplotlib==3.9.2 scipy==1.14.1
+        # Deliberately not models/requirements.txt as-is:
+        #  - sdv/torch/seaborn are only needed for CTGAN synthetic
+        #    augmentation, off by default (USE_SYNTHETIC_AUGMENTATION
+        #    unset), and would add several minutes of install time for
+        #    nothing exercised here.
+        #  - scikit-learn pinned to 1.5.2, not requirements.txt's 1.9.0:
+        #    confirmed locally that xgboost==2.1.1 (this project's
+        #    benchmarked version - see train_xgboost.py's docstring) +
+        #    scikit-learn==1.9.0 crashes mlflow.xgboost.log_model() with
+        #    "TypeError: `_estimator_type` undefined" - sklearn 1.9 removed
+        #    the plain _estimator_type attribute xgboost 2.1.1's
+        #    save_model() still reads directly. 1.5.2 predates that
+        #    removal. requirements.txt itself likely needs the same fix,
+        #    but changing it also touches the sdv/CTGAN pipeline sharing
+        #    that file, which needs separate verification - flagged, not
+        #    done here.
+        run: pip install mlflow==2.15.1 pandas==2.2.2 openpyxl==3.1.5 filelock==3.32.2 xgboost==2.1.1 scikit-learn==1.5.2 matplotlib==3.9.2 scipy==1.14.1
 
       - name: Register real fraud models in MLflow
         # Runs the actual, already-tested training scripts - not a rigged
