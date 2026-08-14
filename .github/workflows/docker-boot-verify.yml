@@ -370,27 +370,29 @@ jobs:
           echo "Baseline row count (including header): $baseline"
 
       - name: Assert scoring picks up the registered models
-        # FraudScorer.score() retries try_load() on every call while not
-        # ready (see scorer.py) - no restart needed, the next /score call
-        # after registration should just succeed.
+        # FraudScorer.score() retries try_load() on every /score call while
+        # not ready (see scorer.py) - so /score itself is what triggers the
+        # reload, not /health (health_status() just reports scorer.is_ready
+        # live - see health.py - it doesn't call try_load()). Polling
+        # /health alone would only pass once *some other* caller (pipeline)
+        # happens to hit /score first; poll /score directly instead so this
+        # doesn't depend on pipeline's own micro-batch timing.
         run: |
           set -e
-          health=""
+          score_status=""
           for i in $(seq 1 12); do
-            health=$(curl -sf http://localhost:8000/health || true)
-            echo "$health" | grep -q '"models_ready":true' && break
+            score_status=$(curl -s -o /tmp/score-live-response.json -w '%{http_code}' -X POST http://localhost:8000/score \
+              -H "Content-Type: application/json" \
+              -d '{"transaction_id":"ci-live-test","terminal_id":"TRM00001","card_bin":"539983","velocity_1h":1,"geo_jump_km":0,"bin_spend_rate":1000,"terminal_reversal_count":0,"amount_ngn":1000}')
+            [ "$score_status" = "200" ] && break
             sleep 5
           done
-          echo "$health"
-          echo "$health" | grep -q '"models_ready":true' \
-            || { echo "::error::scoring never reported models_ready:true after registering both models"; exit 1; }
-          score_status=$(curl -s -o /tmp/score-live-response.json -w '%{http_code}' -X POST http://localhost:8000/score \
-            -H "Content-Type: application/json" \
-            -d '{"transaction_id":"ci-live-test","terminal_id":"TRM00001","card_bin":"539983","velocity_1h":1,"geo_jump_km":0,"bin_spend_rate":1000,"terminal_reversal_count":0,"amount_ngn":1000}')
           cat /tmp/score-live-response.json
           echo
           [ "$score_status" = "200" ] \
             || { echo "::error::expected 200 from /score once models are registered, got $score_status"; exit 1; }
+          echo "Health after warm-up:"
+          curl -sf http://localhost:8000/health
 
       - name: Wait for a live fraud alert to reach data/alerts.xlsx
         # Producer runs continuously at 5 tx/sec with ~3.8% fraud injected
