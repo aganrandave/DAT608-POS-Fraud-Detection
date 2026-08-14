@@ -98,6 +98,19 @@ services:
     volumes:
       - ../data:/app/data
 
+  alerts:
+    build:
+      context: ..
+      dockerfile: alerts/Dockerfile
+    depends_on:
+      - kafka
+    env_file:
+      - ../.env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    volumes:
+      - ../data:/app/data
+
   dashboard:
     build:
       context: ..

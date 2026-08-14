@@ -6,6 +6,13 @@ import openpyxl
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "pipeline"))
 
+# alerts/excel_writer.py is a different module that happens to share this
+# exact filename. Python caches imports by module name, not by path, so
+# whichever test file's excel_writer gets imported first "wins" and the
+# other silently gets served the wrong one - evict any stale entry so this
+# test always gets pipeline's version regardless of collection order.
+sys.modules.pop("excel_writer", None)
+
 from excel_writer import COLUMNS, append_features  # noqa: E402
 
 ROW_1 = {
