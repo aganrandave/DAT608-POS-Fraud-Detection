@@ -100,13 +100,15 @@ jobs:
             fi
           done
 
-      - name: Boot application services (producer, pipeline, scoring, dashboard)
+      - name: Boot application services (producer, pipeline, scoring, alerts, dashboard)
         # scoring used to crash here every time - a fresh compose run has an
         # empty mlruns volume with nothing registered, and FraudScorer used
         # to call load_latest_model() straight from __init__. Now it loads
         # lazily and survives a cold boot (see scoring/scorer.py), so it's
         # a normal required service here rather than a soft-failed one.
-        run: docker compose -f infra/docker-compose.yml up -d producer pipeline scoring dashboard
+        # alerts is new (SCRUM-36) - previously excel_writer.py had no
+        # consumer entrypoint to boot at all.
+        run: docker compose -f infra/docker-compose.yml up -d producer pipeline scoring alerts dashboard
 
       - name: Give application services time to settle
         # pipeline resolves the spark-sql-kafka connector from Maven at
@@ -121,7 +123,7 @@ jobs:
       - name: Dump logs for every service
         if: always()
         run: |
-          for svc in zookeeper kafka ksqldb-server mlflow producer pipeline scoring dashboard; do
+          for svc in zookeeper kafka ksqldb-server mlflow producer pipeline scoring alerts dashboard; do
             echo "::group::$svc logs"
             docker compose -f infra/docker-compose.yml logs --tail=80 "$svc" || true
             echo "::endgroup::"
@@ -140,7 +142,7 @@ jobs:
           status="$(docker compose -f infra/docker-compose.yml ps --format '{{.Service}} {{.State}}')"
           echo "$status"
           failed=0
-          for svc in zookeeper kafka ksqldb-server mlflow producer pipeline scoring dashboard; do
+          for svc in zookeeper kafka ksqldb-server mlflow producer pipeline scoring alerts dashboard; do
             state=$(echo "$status" | awk -v s="$svc" '$1==s {print $2}')
             if [ "$state" != "running" ]; then
               echo "::error::$svc is not running (state=${state:-not found})"
@@ -168,7 +170,7 @@ jobs:
           [ "$score_status" = "503" ] \
             || { echo "::error::expected 503 (models not ready) from /score, got $score_status"; exit 1; }
 
-      - name: Assert producer and pipeline actually reached Kafka
+      - name: Assert producer, pipeline, and alerts actually reached Kafka
         # "running" alone isn't proof of working: an earlier run showed
         # pipeline as "running" while its logs were stuck retrying
         # "Connection to node -1 (localhost/127.0.0.1:9092) could not be
@@ -181,7 +183,7 @@ jobs:
         run: |
           set -e
           failed=0
-          for svc in producer pipeline; do
+          for svc in producer pipeline alerts; do
             if docker compose -f infra/docker-compose.yml logs "$svc" | grep -q "could not be established"; then
               echo "::error::$svc logged a Kafka connection failure - it's alive but not actually connected"
               failed=1
