@@ -33,7 +33,15 @@ def append_alert(alert: dict, xlsx_path: str = ALERTS_XLSX) -> dict:
     with FileLock(lock_path, timeout=30):
         wb = openpyxl.load_workbook(xlsx_path)
         ws = wb.active
-        ws.append([alert[col] for col in COLUMNS])
+        # .get(), not alert[col]: ksqlDB's JSON serializer omits a field
+        # entirely when its value is NULL (e.g. merchant_id/terminal_name
+        # when the LEFT JOIN in 03_create_alert_stream.sql finds no
+        # matching reference row) rather than emitting it as null. A
+        # missing key here used to raise KeyError and crash this
+        # long-running consumer process outright - one alert with any
+        # null field took down alert ingestion for every alert after it,
+        # since nothing restarts this container.
+        ws.append([alert.get(col) for col in COLUMNS])
         wb.save(xlsx_path)
 
     return alert
