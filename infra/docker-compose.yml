@@ -74,10 +74,16 @@ services:
       dockerfile: pipeline/Dockerfile
     depends_on:
       - kafka
+      - scoring
     env_file:
       - ../.env
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # call_scoring_api() posts each computed feature row here - see
+      # spark_consumer.py. Best-effort with its own timeout/retry handling,
+      # so pipeline doesn't need scoring to be fully ready at start, just
+      # reachable by the time messages start flowing.
+      SCORING_API_URL: http://scoring:8000/score
     volumes:
       - ../data:/app/data
 

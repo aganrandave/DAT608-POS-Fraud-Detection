@@ -38,10 +38,3 @@ def append_features(rows: list[dict], xlsx_path: str = FEATURES_XLSX) -> None:
             ws.append([row[col] for col in COLUMNS])
         if new_rows:
             wb.save(xlsx_path)
-
-
-def write_batch(batch_df, batch_id: int) -> None:
-    """foreachBatch sink used by spark_consumer.py's writeStream call."""
-    rows = [row.asDict() for row in batch_df.collect()]
-    if rows:
-        append_features(rows)

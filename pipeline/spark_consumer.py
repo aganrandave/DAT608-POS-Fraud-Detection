@@ -2,7 +2,7 @@
 
 Reads raw transaction JSON from the pos-transactions Kafka topic and writes
 each micro-batch's windowed features to data/features.xlsx via
-excel_writer.write_batch.
+excel_writer.append_features.
 
 feature_windows.build_features() is applied inside the foreachBatch
 callback, not on the streaming DataFrame itself. Structured Streaming only
@@ -24,19 +24,52 @@ validation this project's models are actually built on) already computes
 genuine full-history trailing windows over pandas; this live path exists
 to demonstrate the streaming wiring works end to end, not to duplicate
 that exact semantics online.
+
+Each computed feature row is also POSTed to the scoring service's /score
+endpoint (call_scoring_api) - previously nothing in the live pipeline ever
+called it at all, so a transaction could flow all the way from Kafka to
+data/features.xlsx and simply stop there.
 """
 import os
 
+import requests
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-from excel_writer import write_batch
+from excel_writer import append_features
 from feature_windows import build_features
 from schema import TRANSACTION_SCHEMA
 
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 KAFKA_TOPIC_TRANSACTIONS = os.getenv("KAFKA_TOPIC_TRANSACTIONS", "pos-transactions")
 CHECKPOINT_DIR = os.getenv("SPARK_CHECKPOINT_DIR", "/tmp/spark-checkpoints")
+SCORING_API_URL = os.getenv("SCORING_API_URL", "http://localhost:8000/score")
+
+# scoring/schemas.py's FeatureRequest fields - a subset of build_features()'s
+# output columns (it also has amount_vs_bin_avg_ratio and timestamp, which
+# FeatureRequest doesn't need since scorer.py derives the ratio itself).
+SCORING_REQUEST_FIELDS = [
+    "transaction_id",
+    "terminal_id",
+    "card_bin",
+    "velocity_1h",
+    "geo_jump_km",
+    "bin_spend_rate",
+    "terminal_reversal_count",
+    "amount_ngn",
+]
+
+
+def call_scoring_api(rows: list[dict]) -> None:
+    """Best-effort: POST each feature row to /score. A single unreachable
+    or slow scoring service shouldn't crash the streaming query - errors
+    are logged per-row and the batch keeps moving."""
+    for row in rows:
+        payload = {field: row[field] for field in SCORING_REQUEST_FIELDS}
+        try:
+            requests.post(SCORING_API_URL, json=payload, timeout=5)
+        except requests.RequestException as exc:
+            print(f"call_scoring_api: failed to score {row.get('transaction_id')}: {exc}")
 
 
 def build_spark_session() -> SparkSession:
@@ -79,7 +112,10 @@ def run() -> None:
         streaming DataFrame) - see the module docstring for why the window
         functions in build_features() have to run here rather than upstream."""
         features_df = build_features(batch_df)
-        write_batch(features_df, batch_id)
+        rows = [row.asDict() for row in features_df.collect()]
+        if rows:
+            append_features(rows)
+            call_scoring_api(rows)
 
     query = (
         transactions.writeStream.outputMode("append")

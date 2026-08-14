@@ -39,6 +39,7 @@ containers via `env_file`:
 | `MLFLOW_TRACKING_URI` | `http://localhost:5000` | models, scoring |
 | `MLFLOW_EXPERIMENT_NAME` | `pos-fraud-detection` | models |
 | `SCORING_API_HOST` / `SCORING_API_PORT` | `0.0.0.0` / `8000` | scoring |
+| `SCORING_API_URL` | `http://localhost:8000/score` | pipeline (posts each computed feature row here) |
 | `MODEL_VERSION` | `v1` | scoring |
 | `STREAMLIT_SERVER_PORT` | `8501` | dashboard |
 | `DATA_DIR` and the `*_XLSX` paths | see `.env.example` | all Excel readers/writers |
