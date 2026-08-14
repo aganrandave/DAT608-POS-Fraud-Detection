@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 
 from excel_writer import append_score
 from health import health_status
+from kafka_publisher import publish_score
 from schemas import FeatureRequest, HealthResponse, ScoreResponse
 from scorer import FraudScorer, ModelsNotReadyError
 
@@ -28,5 +29,6 @@ def score(request: FeatureRequest) -> dict:
     result["scored_at"] = datetime.now(timezone.utc).isoformat()
 
     append_score(result)
+    publish_score(result)
 
     return result

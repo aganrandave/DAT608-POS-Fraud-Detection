@@ -113,8 +113,69 @@ jobs:
       - name: Give application services time to settle
         # pipeline resolves the spark-sql-kafka connector from Maven at
         # session startup (see spark_consumer.py), which takes longer than
-        # the other services' plain process start.
+        # the other services' plain process start. alerts' entrypoint.sh
+        # also runs publish_reference_data.py to completion before it starts
+        # consuming - this wait is what gives it time to finish so the
+        # reference tables below have something to read.
         run: sleep 60
+
+      - name: Create ksqlDB reference tables (SCRUM-33/36, reuses alerts/tables/*)
+        # terminal_reference.sql and merchant_reference.sql are plain CREATE
+        # TABLEs over the terminal-reference/merchant-reference topics that
+        # alerts/publish_reference_data.py just populated (previous step).
+        # ksql.streams.auto.offset.reset defaults to "latest", which would
+        # make the table permanently blind to rows published before the
+        # table existed - these need "earliest" so they materialize what's
+        # already on the topic.
+        run: |
+          post_ksql_earliest() {
+            status=$(jq -n --arg ksql "$(cat "$1")" \
+                '{ksql: $ksql, streamsProperties: {"ksql.streams.auto.offset.reset": "earliest"}}' \
+              | curl -s -o /tmp/ksql-response.json -w '%{http_code}' -X POST http://localhost:8088/ksql \
+                  -H "Content-Type: application/vnd.ksql.v1+json" -d @-)
+            echo "$1 -> HTTP $status"
+            cat /tmp/ksql-response.json
+            echo
+            [ "$status" = "200" ]
+          }
+          post_ksql_earliest alerts/tables/terminal_reference.sql
+          post_ksql_earliest alerts/tables/merchant_reference.sql
+          echo "Tables now registered:"
+          jq -n '{ksql: "SHOW TABLES;", streamsProperties: {}}' \
+            | curl -s -X POST http://localhost:8088/ksql \
+                -H "Content-Type: application/vnd.ksql.v1+json" -d @- \
+            | tee /tmp/ksql-tables.json
+          for table in TERMINAL_REFERENCE MERCHANT_REFERENCE; do
+            if ! grep -q "$table" /tmp/ksql-tables.json; then
+              echo "::error::$table was not created"
+              exit 1
+            fi
+          done
+
+      - name: Create ksqlDB alert_stream (SCRUM-36, reuses alerts/streams/03)
+        # Joins transactions_stream + scored_stream against the two
+        # reference tables just created. Also needs "earliest" so it
+        # processes whatever producer/scoring already wrote to
+        # pos-transactions/pos-fraud-scores before this query started,
+        # rather than only rows emitted after.
+        run: |
+          status=$(jq -n --arg ksql "$(cat alerts/streams/03_create_alert_stream.sql)" \
+              '{ksql: $ksql, streamsProperties: {"ksql.streams.auto.offset.reset": "earliest"}}' \
+            | curl -s -o /tmp/ksql-response.json -w '%{http_code}' -X POST http://localhost:8088/ksql \
+                -H "Content-Type: application/vnd.ksql.v1+json" -d @-)
+          echo "alerts/streams/03_create_alert_stream.sql -> HTTP $status"
+          cat /tmp/ksql-response.json
+          echo
+          [ "$status" = "200" ]
+          echo "Streams now registered:"
+          jq -n '{ksql: "SHOW STREAMS;", streamsProperties: {}}' \
+            | curl -s -X POST http://localhost:8088/ksql \
+                -H "Content-Type: application/vnd.ksql.v1+json" -d @- \
+            | tee /tmp/ksql-streams-final.json
+          if ! grep -q "ALERT_STREAM" /tmp/ksql-streams-final.json; then
+            echo "::error::ALERT_STREAM was not created"
+            exit 1
+          fi
 
       - name: Report container status
         if: always()
@@ -201,6 +262,34 @@ jobs:
             fi
           done
           exit $failed
+
+      - name: Assert alerts published reference data at startup
+        # entrypoint.sh runs publish_reference_data.py before kafka_consumer.py
+        # (see alerts/Dockerfile) - this is the one line it prints on success,
+        # proving the reference-data publisher actually ran and reached
+        # Kafka, not just that the container stayed "running".
+        run: |
+          set -e
+          if ! docker compose -f infra/docker-compose.yml logs alerts | grep -q "Published .* terminals, .* merchants"; then
+            echo "::error::alerts never logged a successful reference-data publish"
+            exit 1
+          fi
+
+      - name: Assert pipeline's scoring calls reached the scoring service
+        # spark_consumer.py's call_scoring_api() POSTs each feature row to
+        # SCORING_API_URL - previously nothing in the live pipeline ever
+        # called scoring at all. uvicorn logs every request it serves, so a
+        # "POST /score" line here is proof the HTTP call actually landed,
+        # independent of whether scoring could score it (it can't yet in
+        # this job - no model is registered, so it'll be a 503, same
+        # cold-boot gap asserted above; that's expected and fine here, only
+        # the *reachability* of the bridge is being checked).
+        run: |
+          set -e
+          if ! docker compose -f infra/docker-compose.yml logs scoring | grep -q "POST /score"; then
+            echo "::error::scoring never received a /score request from pipeline"
+            exit 1
+          fi
 
       - name: Tear down
         if: always()

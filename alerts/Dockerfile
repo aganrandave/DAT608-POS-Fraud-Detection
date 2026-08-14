@@ -8,4 +8,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY alerts/ ./
 COPY data/ /app/data/
 
-CMD ["python", "kafka_consumer.py"]
+RUN chmod +x entrypoint.sh
+CMD ["./entrypoint.sh"]
