@@ -299,8 +299,34 @@ jobs:
             exit 1
           fi
 
-      - name: Install model training dependencies
-        # Deliberately not models/requirements.txt as-is:
+      - name: Register real fraud models in MLflow
+        # Runs the actual, already-tested training scripts - not a rigged
+        # stand-in - against the same committed data/features.xlsx and
+        # transactions_raw.xlsx used for every prior real training run.
+        # This closes SCRUM-36's last open gap: proving a real alert
+        # reaches data/alerts.xlsx end to end, not just that the topology
+        # is wired.
+        #
+        # Runs inside a throwaway container, not on the runner host,
+        # for two reasons discovered by actually trying the host-side
+        # approach first:
+        #  1. mlflow's default-artifact-root (/mlruns, see docker-compose.yml)
+        #     is a plain local path, not proxied over HTTP - a host-side
+        #     client hits "PermissionError: /mlruns" trying to write
+        #     artifacts directly to a path that only exists inside the
+        #     mlflow container's own volume. --volumes-from shares that
+        #     exact volume so /mlruns resolves the same way here.
+        #  2. producer/pipeline run as root in their containers (no USER
+        #     in their Dockerfiles) and continuously write into the same
+        #     bind-mounted data/ dir via FileLock, creating *.lock files
+        #     owned by root - a non-root host process can't open them.
+        #     Plain `docker run` containers are root by default too, so
+        #     this sidesteps that mismatch rather than chmod-ing around it.
+        # --network container:<mlflow> shares mlflow's network namespace,
+        # so MLFLOW_TRACKING_URI=http://localhost:5000 reaches it directly
+        # without needing to know the compose-generated network name.
+        #
+        # Deliberately not models/requirements.txt as installed here:
         #  - sdv/torch/seaborn are only needed for CTGAN synthetic
         #    augmentation, off by default (USE_SYNTHETIC_AUGMENTATION
         #    unset), and would add several minutes of install time for
@@ -316,37 +342,26 @@ jobs:
         #    but changing it also touches the sdv/CTGAN pipeline sharing
         #    that file, which needs separate verification - flagged, not
         #    done here.
-        run: pip install mlflow==2.15.1 pandas==2.2.2 openpyxl==3.1.5 filelock==3.32.2 xgboost==2.1.1 scikit-learn==1.5.2 matplotlib==3.9.2 scipy==1.14.1
-
-      - name: Register real fraud models in MLflow
-        # Runs the actual, already-tested training scripts - not a rigged
-        # stand-in - against the same committed data/features.xlsx and
-        # transactions_raw.xlsx used for every prior real training run.
-        # mlflow's port is published to the host (see docker-compose.yml),
-        # so this talks to the exact same tracking server / registry
-        # scoring's load_latest_model() reads from. This is what closes
-        # SCRUM-36's last open gap: proving a real alert reaches
-        # data/alerts.xlsx end to end, not just that the topology is wired.
         # Run from the repo root, not models/ - excel_reader.py's
         # FEATURES_XLSX/TRANSACTIONS_XLSX paths are relative to the process
         # cwd (data/features.xlsx), while the scripts' own
         # `from excel_reader import ...` resolves via sys.path[0], which
         # Python sets to the script's own directory regardless of cwd. See
         # models/README.md's documented invocation.
-        env:
-          MLFLOW_TRACKING_URI: http://localhost:5000
         run: |
-          # producer/pipeline run as root inside their containers (no USER
-          # in their Dockerfiles) and continuously write into this same
-          # bind-mounted data/ dir via FileLock, which creates *.lock files
-          # owned by root. excel_reader.py's own FileLock use here (as the
-          # non-root `runner` user) then fails to open that existing
-          # root-owned lock file - PermissionError, not a race. The lock
-          # files are created once and never re-chmod'd afterward, so
-          # fixing this here is durable for the rest of the job.
-          sudo chmod 666 data/*.lock 2>/dev/null || true
-          python models/train_xgboost.py
-          python models/train_isolation_forest.py
+          mlflow_cid=$(docker compose -f infra/docker-compose.yml ps -q mlflow)
+          docker run --rm \
+            --network "container:$mlflow_cid" \
+            --volumes-from "$mlflow_cid" \
+            -v "$PWD/data:/workspace/data" \
+            -v "$PWD/models:/workspace/models" \
+            -w /workspace \
+            -e MLFLOW_TRACKING_URI=http://localhost:5000 \
+            python:3.11-slim \
+            bash -c "pip install --quiet mlflow==2.15.1 pandas==2.2.2 openpyxl==3.1.5 filelock==3.32.2 xgboost==2.1.1 scikit-learn==1.5.2 matplotlib==3.9.2 scipy==1.14.1 && python models/train_xgboost.py && python models/train_isolation_forest.py"
+
+      - name: Install openpyxl for host-side alerts.xlsx polling
+        run: pip install --quiet openpyxl==3.1.5
 
       - name: Capture data/alerts.xlsx row count before scoring goes live
         run: |
