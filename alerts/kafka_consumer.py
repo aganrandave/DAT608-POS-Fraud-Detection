@@ -55,7 +55,8 @@ def build_consumer() -> KafkaConsumer:
 def run(consumer: KafkaConsumer | None = None) -> None:
     consumer = consumer or build_consumer()
     for message in consumer:
-        append_alert(normalize_alert(message.value))
+        alert = append_alert(normalize_alert(message.value))
+        print(f"Appended alert {alert['transaction_id']} tier={alert['alert_tier']}")
 
 
 if __name__ == "__main__":

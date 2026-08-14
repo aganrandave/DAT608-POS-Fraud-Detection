@@ -22,11 +22,19 @@ on:
 jobs:
   docker-boot-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Set up Python
+        # Used later to register real models against the real committed
+        # dataset (see "Register real fraud models in MLflow" below) and to
+        # poll data/alerts.xlsx for a live alert row.
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
       - name: Prepare env files
         run: |
@@ -290,6 +298,136 @@ jobs:
             echo "::error::scoring never received a /score request from pipeline"
             exit 1
           fi
+
+      - name: Register real fraud models in MLflow
+        # Runs the actual, already-tested training scripts - not a rigged
+        # stand-in - against the same committed data/features.xlsx and
+        # transactions_raw.xlsx used for every prior real training run.
+        # This closes SCRUM-36's last open gap: proving a real alert
+        # reaches data/alerts.xlsx end to end, not just that the topology
+        # is wired.
+        #
+        # Runs inside a throwaway container, not on the runner host,
+        # for two reasons discovered by actually trying the host-side
+        # approach first:
+        #  1. mlflow's default-artifact-root (/mlruns, see docker-compose.yml)
+        #     is a plain local path, not proxied over HTTP - a host-side
+        #     client hits "PermissionError: /mlruns" trying to write
+        #     artifacts directly to a path that only exists inside the
+        #     mlflow container's own volume. --volumes-from shares that
+        #     exact volume so /mlruns resolves the same way here.
+        #  2. producer/pipeline run as root in their containers (no USER
+        #     in their Dockerfiles) and continuously write into the same
+        #     bind-mounted data/ dir via FileLock, creating *.lock files
+        #     owned by root - a non-root host process can't open them.
+        #     Plain `docker run` containers are root by default too, so
+        #     this sidesteps that mismatch rather than chmod-ing around it.
+        # --network container:<mlflow> shares mlflow's network namespace,
+        # so MLFLOW_TRACKING_URI=http://localhost:5000 reaches it directly
+        # without needing to know the compose-generated network name.
+        #
+        # Deliberately not models/requirements.txt as installed here:
+        #  - sdv/torch/seaborn are only needed for CTGAN synthetic
+        #    augmentation, off by default (USE_SYNTHETIC_AUGMENTATION
+        #    unset), and would add several minutes of install time for
+        #    nothing exercised here.
+        #  - scikit-learn pinned to 1.5.2, not requirements.txt's 1.9.0:
+        #    confirmed locally that xgboost==2.1.1 (this project's
+        #    benchmarked version - see train_xgboost.py's docstring) +
+        #    scikit-learn==1.9.0 crashes mlflow.xgboost.log_model() with
+        #    "TypeError: `_estimator_type` undefined" - sklearn 1.9 removed
+        #    the plain _estimator_type attribute xgboost 2.1.1's
+        #    save_model() still reads directly. 1.5.2 predates that
+        #    removal. requirements.txt itself likely needs the same fix,
+        #    but changing it also touches the sdv/CTGAN pipeline sharing
+        #    that file, which needs separate verification - flagged, not
+        #    done here.
+        # Run from the repo root, not models/ - excel_reader.py's
+        # FEATURES_XLSX/TRANSACTIONS_XLSX paths are relative to the process
+        # cwd (data/features.xlsx), while the scripts' own
+        # `from excel_reader import ...` resolves via sys.path[0], which
+        # Python sets to the script's own directory regardless of cwd. See
+        # models/README.md's documented invocation.
+        run: |
+          mlflow_cid=$(docker compose -f infra/docker-compose.yml ps -q mlflow)
+          docker run --rm \
+            --network "container:$mlflow_cid" \
+            --volumes-from "$mlflow_cid" \
+            -v "$PWD/data:/workspace/data" \
+            -v "$PWD/models:/workspace/models" \
+            -w /workspace \
+            -e MLFLOW_TRACKING_URI=http://localhost:5000 \
+            python:3.11-slim \
+            bash -c "pip install --quiet mlflow==2.15.1 pandas==2.2.2 openpyxl==3.1.5 filelock==3.32.2 xgboost==2.1.1 scikit-learn==1.5.2 matplotlib==3.9.2 scipy==1.14.1 && python models/train_xgboost.py && python models/train_isolation_forest.py"
+
+      - name: Install openpyxl for host-side alerts.xlsx polling
+        run: pip install --quiet openpyxl==3.1.5
+
+      - name: Capture data/alerts.xlsx row count before scoring goes live
+        run: |
+          baseline=$(python -c "import openpyxl; print(openpyxl.load_workbook('data/alerts.xlsx', read_only=True).active.max_row)")
+          echo "ALERTS_BASELINE_ROWS=$baseline" >> "$GITHUB_ENV"
+          echo "Baseline row count (including header): $baseline"
+
+      - name: Assert scoring picks up the registered models
+        # FraudScorer.score() retries try_load() on every /score call while
+        # not ready (see scorer.py) - so /score itself is what triggers the
+        # reload, not /health (health_status() just reports scorer.is_ready
+        # live - see health.py - it doesn't call try_load()). Polling
+        # /health alone would only pass once *some other* caller (pipeline)
+        # happens to hit /score first; poll /score directly instead so this
+        # doesn't depend on pipeline's own micro-batch timing.
+        run: |
+          set -e
+          score_status=""
+          for i in $(seq 1 12); do
+            score_status=$(curl -s -o /tmp/score-live-response.json -w '%{http_code}' -X POST http://localhost:8000/score \
+              -H "Content-Type: application/json" \
+              -d '{"transaction_id":"ci-live-test","terminal_id":"TRM00001","card_bin":"539983","velocity_1h":1,"geo_jump_km":0,"bin_spend_rate":1000,"terminal_reversal_count":0,"amount_ngn":1000}')
+            [ "$score_status" = "200" ] && break
+            sleep 5
+          done
+          cat /tmp/score-live-response.json
+          echo
+          [ "$score_status" = "200" ] \
+            || { echo "::error::expected 200 from /score once models are registered, got $score_status"; exit 1; }
+          echo "Health after warm-up:"
+          curl -sf http://localhost:8000/health
+
+      - name: Wait for a live fraud alert to reach data/alerts.xlsx
+        # Producer runs continuously at 5 tx/sec with ~3.8% fraud injected
+        # (producer/config.py, producer/transaction_generator.py) and
+        # pipeline now calls /score against real trained models instead of
+        # a cold 503. This is the one thing no earlier CI run ever proved:
+        # a real alert completing the full producer -> pipeline -> scoring
+        # -> kafka_publisher -> alert_stream -> alerts consumer ->
+        # data/alerts.xlsx round trip. Reads happen from the host, not the
+        # container, so a rare read racing the container's own write is
+        # tolerated (treated as "no new row yet") rather than failing the job.
+        run: |
+          set -e
+          found=0
+          for i in $(seq 1 30); do
+            current=$(python -c "import openpyxl; print(openpyxl.load_workbook('data/alerts.xlsx', read_only=True).active.max_row)" 2>/dev/null || echo 0)
+            if [ "${current:-0}" -gt "$ALERTS_BASELINE_ROWS" ]; then
+              echo "New alert(s) landed - row count $ALERTS_BASELINE_ROWS -> $current"
+              python -c "import openpyxl; wb = openpyxl.load_workbook('data/alerts.xlsx', read_only=True); rows = list(wb.active.iter_rows(values_only=True)); [print(row) for row in rows[$ALERTS_BASELINE_ROWS:]]"
+              found=1
+              break
+            fi
+            sleep 5
+          done
+          [ "$found" = "1" ] \
+            || { echo "::error::no new alert reached data/alerts.xlsx within the timeout - the producer/pipeline/scoring/ksqlDB/alerts round trip did not complete live"; exit 1; }
+
+      - name: Dump scoring/pipeline/alerts logs after live scoring attempt
+        if: always()
+        run: |
+          for svc in pipeline scoring alerts; do
+            echo "::group::$svc logs (post-registration)"
+            docker compose -f infra/docker-compose.yml logs --tail=150 "$svc" || true
+            echo "::endgroup::"
+          done
 
       - name: Tear down
         if: always()

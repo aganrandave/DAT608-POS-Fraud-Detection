@@ -103,6 +103,16 @@ services:
       - "8000:8000"
     volumes:
       - ../data:/app/data
+      # mlflow's --default-artifact-root (/mlruns) is a plain local path,
+      # not proxied over HTTP - mlflow.pyfunc.load_model() needs direct
+      # filesystem access to read a registered model's artifact files, not
+      # just HTTP access to the tracking server. Without this mount,
+      # scoring could never actually load ANY registered model in this
+      # topology, regardless of whether one existed - /score would 503
+      # forever, not just during the documented cold-boot window. Same
+      # named volume mlflow itself writes to, so both sides see the same
+      # data.
+      - mlruns:/mlruns
 
   alerts:
     build:
