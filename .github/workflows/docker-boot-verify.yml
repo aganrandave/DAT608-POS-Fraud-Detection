@@ -169,6 +169,17 @@ jobs:
           echo
           [ "$score_status" = "503" ] \
             || { echo "::error::expected 503 (models not ready) from /score, got $score_status"; exit 1; }
+          # SCRUM-33's other never-verified claim: malformed requests return
+          # 422. FastAPI/Pydantic does this by default on a schema
+          # validation failure, but "the framework probably does it" had
+          # never actually been checked against the real running service.
+          malformed_status=$(curl -s -o /tmp/malformed-response.json -w '%{http_code}' -X POST http://localhost:8000/score \
+            -H "Content-Type: application/json" \
+            -d '{"transaction_id":"ci-test"}')
+          cat /tmp/malformed-response.json
+          echo
+          [ "$malformed_status" = "422" ] \
+            || { echo "::error::expected 422 for a malformed request (missing required fields), got $malformed_status"; exit 1; }
 
       - name: Assert producer, pipeline, and alerts actually reached Kafka
         # "running" alone isn't proof of working: an earlier run showed
