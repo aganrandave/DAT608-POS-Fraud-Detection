@@ -324,6 +324,15 @@ jobs:
         env:
           MLFLOW_TRACKING_URI: http://localhost:5000
         run: |
+          # producer/pipeline run as root inside their containers (no USER
+          # in their Dockerfiles) and continuously write into this same
+          # bind-mounted data/ dir via FileLock, which creates *.lock files
+          # owned by root. excel_reader.py's own FileLock use here (as the
+          # non-root `runner` user) then fails to open that existing
+          # root-owned lock file - PermissionError, not a race. The lock
+          # files are created once and never re-chmod'd afterward, so
+          # fixing this here is durable for the rest of the job.
+          sudo chmod 666 data/*.lock 2>/dev/null || true
           python models/train_xgboost.py
           python models/train_isolation_forest.py
 
