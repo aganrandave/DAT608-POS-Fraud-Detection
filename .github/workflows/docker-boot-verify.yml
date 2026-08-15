@@ -395,6 +395,33 @@ jobs:
           echo "Health after warm-up:"
           curl -sf http://localhost:8000/health
 
+      - name: Run scoring/benchmark.py for real (SCRUM-33/44)
+        # SCRUM-33/44's response-latency criterion had never actually been
+        # measured - scoring/benchmark.py existed but had never been run
+        # against a live service with real registered models. It can now:
+        # models are trained and registered, scoring is warm (previous step
+        # confirmed a real 200 response). Prints real p50/p95/max, not
+        # simulated - whatever comes out is the honest number for the record,
+        # pass or fail against the 250ms SLA test_api_latency.py encodes.
+        run: |
+          pip install --quiet requests
+          python scoring/benchmark.py
+
+      - name: Run integration tests for real (SCRUM-38)
+        # tests/integration/test_api_latency.py and test_pipeline_e2e.py are
+        # both pytest.mark.skipif-gated behind RUN_INTEGRATION_TESTS=1, and
+        # .github/workflows/integration.yml never sets that var - so neither
+        # test has ever actually executed, despite the "integration-tests"
+        # CI check passing on every PR (it was silently skipping both,
+        # every time). The full live stack - real registered models, scoring
+        # warm, Kafka, ksqlDB - is available right here, so run them for
+        # real instead of leaving them permanently skipped.
+        env:
+          RUN_INTEGRATION_TESTS: "1"
+        run: |
+          pip install --quiet pytest requests
+          pytest tests/integration/ -v
+
       - name: Wait for a live fraud alert to reach data/alerts.xlsx
         # Producer runs continuously at 5 tx/sec with ~3.8% fraud injected
         # (producer/config.py, producer/transaction_generator.py) and
