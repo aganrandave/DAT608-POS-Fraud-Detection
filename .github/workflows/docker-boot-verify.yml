@@ -438,8 +438,12 @@ jobs:
           for i in $(seq 1 30); do
             current=$(python -c "import openpyxl; print(openpyxl.load_workbook('data/alerts.xlsx', read_only=True).active.max_row)" 2>/dev/null || echo 0)
             if [ "${current:-0}" -gt "$ALERTS_BASELINE_ROWS" ]; then
-              echo "New alert(s) landed - row count $ALERTS_BASELINE_ROWS -> $current"
+              detected_at=$(python -c "from datetime import datetime, timezone; print(datetime.now(timezone.utc).isoformat())")
+              echo "New alert(s) landed - row count $ALERTS_BASELINE_ROWS -> $current, detected at $detected_at"
               python -c "import openpyxl; wb = openpyxl.load_workbook('data/alerts.xlsx', read_only=True); rows = list(wb.active.iter_rows(values_only=True)); [print(row) for row in rows[$ALERTS_BASELINE_ROWS:]]"
+              txn_id=$(python -c "import openpyxl; wb = openpyxl.load_workbook('data/alerts.xlsx', read_only=True); rows = list(wb.active.iter_rows(values_only=True)); print(rows[$ALERTS_BASELINE_ROWS][1])")
+              echo "ALERT_DETECTED_AT=$detected_at" >> "$GITHUB_ENV"
+              echo "ALERT_TRANSACTION_ID=$txn_id" >> "$GITHUB_ENV"
               found=1
               break
             fi
@@ -447,6 +451,81 @@ jobs:
           done
           [ "$found" = "1" ] \
             || { echo "::error::no new alert reached data/alerts.xlsx within the timeout - the producer/pipeline/scoring/ksqlDB/alerts round trip did not complete live"; exit 1; }
+
+      - name: Measure transaction-to-alert latency (SCRUM-44)
+        # SCRUM-44's "transaction to Streamlit alert under 30s" criterion had
+        # never been directly measured. alert_stream's own SELECT (see
+        # alerts/streams/03_create_alert_stream.sql) doesn't propagate the
+        # source transaction's own timestamp through the join, so it isn't
+        # available on the alert row itself - this queries pos-transactions
+        # directly for the exact transaction_id that produced the alert just
+        # observed, to read its real production timestamp
+        # (producer/transaction_generator.py sets this to datetime.now(UTC)
+        # at send time on the live/continuous path, not a synthetic value).
+        #
+        # Runs inside a throwaway container sharing kafka's own network
+        # namespace: KAFKA_ADVERTISED_LISTENERS is kafka:9092 (see
+        # docker-compose.yml), so a host-side client would bootstrap
+        # successfully but then be redirected to an unresolvable address for
+        # the actual fetch - same class of issue as the earlier mlflow
+        # /mlruns fix, same fix shape.
+        #
+        # The remaining alerts.xlsx -> visible-in-Streamlit segment isn't
+        # re-measured here (no browser in this CI job) - it was already
+        # live-verified separately at ~8s via the 5s auto-refresh cycle
+        # (SCRUM-39, Done). Combined with what's measured here, that answers
+        # this ticket's literal end-to-end criterion.
+        run: |
+          cat > /tmp/measure_latency.py <<'PYEOF'
+          import json
+          import os
+          import sys
+          from datetime import datetime
+
+          from kafka import KafkaConsumer
+
+          target_id = os.environ["ALERT_TRANSACTION_ID"]
+          detected_at = datetime.fromisoformat(os.environ["ALERT_DETECTED_AT"])
+
+          consumer = KafkaConsumer(
+              "pos-transactions",
+              bootstrap_servers="localhost:9092",
+              auto_offset_reset="earliest",
+              value_deserializer=lambda v: json.loads(v.decode("utf-8")),
+              consumer_timeout_ms=30000,
+          )
+          produced_at = None
+          for msg in consumer:
+              if msg.value.get("transaction_id") == target_id:
+                  produced_at = datetime.fromisoformat(msg.value["timestamp"])
+                  break
+          consumer.close()
+
+          if produced_at is None:
+              print(f"::error::could not find transaction {target_id} on pos-transactions topic")
+              sys.exit(1)
+
+          latency_s = (detected_at - produced_at).total_seconds()
+          streamlit_overhead_s = 8.0
+          total_s = latency_s + streamlit_overhead_s
+          print(f"Transaction {target_id} produced at {produced_at.isoformat()}")
+          print(f"Alert observed in data/alerts.xlsx at {detected_at.isoformat()}")
+          print(f"Measured transaction -> alerts.xlsx latency: {latency_s:.2f}s")
+          print(f"Plus ~{streamlit_overhead_s:.0f}s alerts.xlsx -> Streamlit-visible (SCRUM-39, live-verified separately via the 5s auto-refresh cycle)")
+          print(f"Estimated total transaction -> Streamlit-visible: {total_s:.2f}s")
+          if total_s >= 30:
+              print(f"::error::estimated end-to-end latency {total_s:.2f}s meets or exceeds the 30s SLA")
+              sys.exit(1)
+          PYEOF
+
+          kafka_cid=$(docker compose -f infra/docker-compose.yml ps -q kafka)
+          docker run --rm \
+            --network "container:$kafka_cid" \
+            -v /tmp/measure_latency.py:/measure_latency.py \
+            -e ALERT_TRANSACTION_ID \
+            -e ALERT_DETECTED_AT \
+            python:3.11-slim \
+            bash -c "pip install --quiet kafka-python==2.0.2 && python /measure_latency.py"
 
       - name: Dump scoring/pipeline/alerts logs after live scoring attempt
         if: always()
