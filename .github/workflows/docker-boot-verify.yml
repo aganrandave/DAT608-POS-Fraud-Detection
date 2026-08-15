@@ -32,7 +32,7 @@ jobs:
         # Used later to register real models against the real committed
         # dataset (see "Register real fraud models in MLflow" below) and to
         # poll data/alerts.xlsx for a live alert row.
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
