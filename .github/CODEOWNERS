@@ -24,22 +24,24 @@
 # Data Scientist.
 /scoring/                  @Oluwatiseunla
 
+# Infra and Docker owned by Data Management.
+/infra/                    @Jessayanka005
+
 # Unstaffed roles default to EM/PM.
 /dashboard/                @aganrandave
-/infra/                    @aganrandave
 /tests/                    @aganrandave
 /docs/                     @aganrandave
 
 # Data files require sign-off from both the infra owner (storage pattern)
 # and whichever layer produces them.
-/data/transactions_raw.xlsx    @aganrandave @john-babalola1307
-/data/features.xlsx            @aganrandave @john-babalola1307
-/data/fraud_scores.xlsx        @aganrandave @Oluwatiseunla
-/data/alerts.xlsx              @aganrandave @john-babalola1307
-/data/reference/                @aganrandave @john-babalola1307
+/data/transactions_raw.xlsx    @Jessayanka005 @john-babalola1307
+/data/features.xlsx            @Jessayanka005 @john-babalola1307
+/data/fraud_scores.xlsx        @Jessayanka005 @Oluwatiseunla
+/data/alerts.xlsx              @Jessayanka005 @john-babalola1307
+/data/reference/                @Jessayanka005 @john-babalola1307
 
 # CI/CD and repo-wide config changes always require the infra owner
-/.github/                  @aganrandave
-/docker-compose.yml        @aganrandave
-/.gitattributes            @aganrandave
-/.gitignore                @aganrandave
+/.github/                  @Jessayanka005
+/docker-compose.yml        @Jessayanka005
+/.gitattributes            @Jessayanka005
+/.gitignore                @Jessayanka005
