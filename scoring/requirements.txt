@@ -2,7 +2,7 @@ fastapi==0.112.0
 uvicorn[standard]==0.52.1
 pydantic==2.13.4
 mlflow==2.15.1
-xgboost==3.2.0
+xgboost==3.4.0
 scikit-learn==1.9.0
 pandas==2.2.2
 openpyxl==3.1.5
