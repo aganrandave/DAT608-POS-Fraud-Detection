@@ -5,6 +5,8 @@ model registry. Mirrored by alerts/alert_tiers.py and covered by
 tests/unit/test_scorer.py. Documented in docs/alert_logic.md.
 """
 
+# Order matters: tier_for_probability returns the first match, so entries
+# must stay sorted highest-to-lowest threshold.
 TIER_THRESHOLDS = {
     "critical": 0.85,
     "high": 0.60,
