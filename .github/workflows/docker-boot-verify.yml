@@ -326,22 +326,23 @@ jobs:
         # so MLFLOW_TRACKING_URI=http://localhost:5000 reaches it directly
         # without needing to know the compose-generated network name.
         #
-        # Deliberately not models/requirements.txt as installed here:
-        #  - sdv/torch/seaborn are only needed for CTGAN synthetic
-        #    augmentation, off by default (USE_SYNTHETIC_AUGMENTATION
-        #    unset), and would add several minutes of install time for
-        #    nothing exercised here.
-        #  - scikit-learn pinned to 1.5.2, not requirements.txt's 1.9.0:
-        #    confirmed locally that xgboost==2.1.1 (this project's
-        #    benchmarked version - see train_xgboost.py's docstring) +
-        #    scikit-learn==1.9.0 crashes mlflow.xgboost.log_model() with
-        #    "TypeError: `_estimator_type` undefined" - sklearn 1.9 removed
-        #    the plain _estimator_type attribute xgboost 2.1.1's
-        #    save_model() still reads directly. 1.5.2 predates that
-        #    removal. requirements.txt itself likely needs the same fix,
-        #    but changing it also touches the sdv/CTGAN pipeline sharing
-        #    that file, which needs separate verification - flagged, not
-        #    done here.
+        # Deliberately not models/requirements.txt verbatim: sdv/torch/seaborn
+        # are only needed for CTGAN synthetic augmentation, off by default
+        # (USE_SYNTHETIC_AUGMENTATION unset), and would add several minutes
+        # of install time for nothing exercised here. Everything else below
+        # (including the xgboost/scikit-learn versions) now matches
+        # requirements.txt exactly - it used to diverge (scikit-learn pinned
+        # to 1.5.2 here, 1.9.0 there) working around a real incompatibility:
+        # xgboost==2.1.1 + scikit-learn==1.9.0 crashed
+        # mlflow.xgboost.log_model() with "TypeError: `_estimator_type`
+        # undefined" (sklearn 1.9 removed the plain _estimator_type
+        # attribute xgboost 2.1.1's save_model() reads directly). Fixed at
+        # the source by bumping xgboost to 3.2.0 (not Dependabot's proposed
+        # 3.4.0 - that requires Python >=3.12, incompatible with this
+        # project's python:3.11-slim base images) in both
+        # models/requirements.txt and scoring/requirements.txt, verified
+        # against the real training scripts (identical holdout F1=0.78, no
+        # numeric drift) before changing either file.
         # Run from the repo root, not models/ - excel_reader.py's
         # FEATURES_XLSX/TRANSACTIONS_XLSX paths are relative to the process
         # cwd (data/features.xlsx), while the scripts' own
@@ -358,7 +359,7 @@ jobs:
             -w /workspace \
             -e MLFLOW_TRACKING_URI=http://localhost:5000 \
             python:3.11-slim \
-            bash -c "pip install --quiet mlflow==2.15.1 pandas==2.2.2 openpyxl==3.1.5 filelock==3.32.2 xgboost==2.1.1 scikit-learn==1.5.2 matplotlib==3.9.2 scipy==1.14.1 && python models/train_xgboost.py && python models/train_isolation_forest.py"
+            bash -c "pip install --quiet mlflow==2.15.1 pandas==2.2.2 openpyxl==3.1.5 filelock==3.32.2 xgboost==3.2.0 scikit-learn==1.9.0 matplotlib==3.9.2 scipy==1.14.1 && python models/train_xgboost.py && python models/train_isolation_forest.py"
 
       - name: Install openpyxl for host-side alerts.xlsx polling
         run: pip install --quiet openpyxl==3.1.5
