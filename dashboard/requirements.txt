@@ -2,4 +2,4 @@ streamlit==1.61.1
 pandas==3.0.5
 openpyxl==3.1.5
 filelock==3.32.2
-pydeck==0.9.1
+pydeck==0.9.3
