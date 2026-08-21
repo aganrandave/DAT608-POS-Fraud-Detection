@@ -19,6 +19,7 @@ DAT608 Big Data capstone at Pan-Atlantic University.
 | Oluwatiseunla Abdul     | Data Scientist | [Oluwatiseunla](https://github.com/Oluwatiseunla) | scoring |
 | John Babalola     | Data Engineer | [john-babalola1307](https://github.com/john-babalola1307) | producer, pipeline, alerts |
 | Jesselyn Ayanka | Data Management | [Jessayanka005](https://github.com/Jessayanka005) | infra, docker |
+
 Unstaffed layers (dashboard, tests, docs) default to the EM/PM until a
 named owner is assigned — see [`.github/CODEOWNERS`](.github/CODEOWNERS) for
 the enforced mapping.
