@@ -27,10 +27,10 @@ the enforced mapping.
 ## Architecture overview
 
 ```
- +-------------+     +-------+     +----------------+     +---------------------+
- | Transaction | --> | Kafka | --> | Spark Structured| --> | Feature Store       |
+ +-------------+     +-------+     +------------------+     +---------------------+
+ | Transaction | --> | Kafka | --> | Spark Structured | --> | Feature Store       |
  | Generator   |     | Topic |     | Streaming        |     | (data/features.xlsx)|
- +-------------+     +-------+     +----------------+     +----------+----------+
+ +-------------+     +-------+     +------------------+     +----------+----------+
                                                                        |
                                                                        v
                                                           +------------------------+
@@ -39,11 +39,11 @@ the enforced mapping.
                                                           +-----------+------------+
                                                                        |
                                                                        v
-+--------------+     +------------+     +----------+     +------------------------+
-| Streamlit    | <-- |  Alerts    | <-- | ksqlDB   | <-- | FastAPI Scoring Service|
++--------------+     +------------+     +----------+     +-------------------------+
+| Streamlit    | <-- |  Alerts    | <-- | ksqlDB   | <-- | FastAPI Scoring Service |
 | Dashboard    |     | (alerts.   |     | Alert    |     | (data/fraud_scores.xlsx)|
-|              |     |  xlsx)     |     | Logic    |     |                        |
-+--------------+     +------------+     +----------+     +------------------------+
+|              |     |  xlsx)     |     | Logic    |     |                         |
++--------------+     +------------+     +----------+     +-------------------------+
 ```
 
 All services are orchestrated with Docker Compose — see [infra/README.md](infra/README.md).
