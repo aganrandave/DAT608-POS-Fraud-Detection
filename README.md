@@ -19,6 +19,7 @@ DAT608 Big Data capstone at Pan-Atlantic University.
 | Oluwatiseunla Abdul     | Data Scientist | [Oluwatiseunla](https://github.com/Oluwatiseunla) | scoring |
 | John Babalola     | Data Engineer | [john-babalola1307](https://github.com/john-babalola1307) | producer, pipeline, alerts |
 | Jesselyn Ayanka | Data Management | [Jessayanka005](https://github.com/Jessayanka005) | infra, docker |
+
 Unstaffed layers (dashboard, tests, docs) default to the EM/PM until a
 named owner is assigned — see [`.github/CODEOWNERS`](.github/CODEOWNERS) for
 the enforced mapping.
@@ -26,23 +27,23 @@ the enforced mapping.
 ## Architecture overview
 
 ```
- +-------------+     +-------+     +----------------+     +---------------------+
- | Transaction | --> | Kafka | --> | Spark Structured| --> | Feature Store       |
+ +-------------+     +-------+     +------------------+     +---------------------+
+ | Transaction | --> | Kafka | --> | Spark Structured | --> | Feature Store       |
  | Generator   |     | Topic |     | Streaming        |     | (data/features.xlsx)|
- +-------------+     +-------+     +----------------+     +----------+----------+
+ +-------------+     +-------+     +------------------+     +----------+----------+
                                                                        |
                                                                        v
                                                           +------------------------+
                                                           | XGBoost + Isolation    |
                                                           | Forest (MLflow logged) |
-                                                          +-----------+------------+
+                                                          +------------+-----------+
                                                                        |
                                                                        v
-+--------------+     +------------+     +----------+     +------------------------+
-| Streamlit    | <-- |  Alerts    | <-- | ksqlDB   | <-- | FastAPI Scoring Service|
++--------------+     +------------+     +----------+     +-------------------------+
+| Streamlit    | <-- |  Alerts    | <-- | ksqlDB   | <-- | FastAPI Scoring Service |
 | Dashboard    |     | (alerts.   |     | Alert    |     | (data/fraud_scores.xlsx)|
-|              |     |  xlsx)     |     | Logic    |     |                        |
-+--------------+     +------------+     +----------+     +------------------------+
+|              |     |  xlsx)     |     | Logic    |     |                         |
++--------------+     +------------+     +----------+     +-------------------------+
 ```
 
 All services are orchestrated with Docker Compose — see [infra/README.md](infra/README.md).
@@ -65,7 +66,7 @@ All services are orchestrated with Docker Compose — see [infra/README.md](infr
 git clone https://github.com/aganrandave/DAT608-POS-Fraud-Detection.git
 cd DAT608-POS-Fraud-Detection
 cp .env.example .env
-docker-compose up --build
+docker compose up --build
 ```
 
 The Streamlit dashboard will be available at `http://localhost:8501` and the

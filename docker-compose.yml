@@ -1,7 +1,10 @@
 version: "3.8"
 
 # Root convenience compose file. Delegates the full service topology to
-# infra/docker-compose.yml so `docker-compose up --build` works from the
+# infra/docker-compose.yml so `docker compose up --build` works from the
 # repository root as documented in the README.
+#
+# Compose v2 only: the `include:` key below is not supported by the legacy
+# v1 `docker-compose` binary, so the hyphenated form fails here.
 include:
   - infra/docker-compose.yml
