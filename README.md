@@ -66,7 +66,7 @@ All services are orchestrated with Docker Compose — see [infra/README.md](infr
 git clone https://github.com/aganrandave/DAT608-POS-Fraud-Detection.git
 cd DAT608-POS-Fraud-Detection
 cp .env.example .env
-docker-compose up --build
+docker compose up --build
 ```
 
 The Streamlit dashboard will be available at `http://localhost:8501` and the
