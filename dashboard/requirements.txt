@@ -1,4 +1,4 @@
-streamlit==1.61.1
+streamlit==1.62.0
 pandas==3.0.5
 openpyxl==3.1.5
 filelock==3.32.2
