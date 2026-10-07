@@ -8,7 +8,11 @@ import sys
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "models"))
 
-from mlflow_registry import load_latest_model  # noqa: E402
+from mlflow_registry import (  # noqa: E402
+    ModelMetadataError,
+    load_isolation_forest_model_and_bounds,
+    load_xgboost_model_and_threshold,
+)
 
 from tiers import tier_for_probability  # noqa: E402
 
@@ -51,24 +55,42 @@ class ModelsNotReadyError(RuntimeError):
 class FraudScorer:
     def __init__(self):
         self.xgboost_model = None
+        self.xgboost_decision_threshold: float | None = None
         self.isolation_forest_model = None
+        self.isolation_forest_score_min: float | None = None
+        self.isolation_forest_score_max: float | None = None
         self.load_error: str | None = None
         self.try_load()
 
     def try_load(self) -> bool:
-        """Attempt to (re)load both models from the MLflow registry. Safe to
+        """Attempt to (re)load both models, and each one's required sibling
+        metadata (the XGBoost decision threshold / Isolation Forest score
+        bounds - see mlflow_registry.py), from the MLflow registry. Safe to
         call repeatedly - a fresh docker-compose boot has an empty mlruns
-        volume with nothing registered yet, and this app used to call
-        load_latest_model() straight from __init__, which crashed the whole
+        volume with nothing registered yet, and this app used to call the
+        registry loader straight from __init__, which crashed the whole
         FastAPI process before uvicorn ever bound the port. Retrying here
         instead lets the service start and report its own readiness
-        honestly via /health, rather than never starting at all."""
+        honestly via /health, rather than never starting at all.
+
+        A model registered WITHOUT its metadata artifact (ModelMetadataError)
+        is treated the same as "not ready" here, but load_error says exactly
+        why - that's a real deployment mistake, not a normal cold-boot gap,
+        and /health should make that distinguishable rather than silently
+        masking it as "still warming up"."""
         try:
-            self.xgboost_model = load_latest_model("pos-fraud-xgboost")
-            self.isolation_forest_model = load_latest_model("pos-fraud-isolation-forest")
+            self.xgboost_model, self.xgboost_decision_threshold = load_xgboost_model_and_threshold()
+            (
+                self.isolation_forest_model,
+                self.isolation_forest_score_min,
+                self.isolation_forest_score_max,
+            ) = load_isolation_forest_model_and_bounds()
             self.load_error = None
             return True
-        except Exception as exc:  # noqa: BLE001 - any registry failure just means "not ready yet"
+        except ModelMetadataError as exc:
+            self.load_error = str(exc)
+            return False
+        except Exception as exc:  # noqa: BLE001 - any other registry failure just means "not ready yet"
             self.load_error = str(exc)
             return False
 
@@ -91,20 +113,51 @@ class FraudScorer:
 
         frame = self._feature_frame(features)
 
-        xgboost_score = float(self.xgboost_model.predict(frame)[0])
-        # Isolation Forest's decision_function is negative for anomalies;
-        # normalize to a 0-1 "fraudiness" score.
-        raw_if_score = float(self.isolation_forest_model.predict(frame)[0])
-        isolation_forest_score = max(0.0, min(1.0, (1 - raw_if_score) / 2))
+        # Positive-class probability, NOT model.predict() - predict() on an
+        # XGBClassifier returns a binary 0/1 label, which would silently
+        # collapse fraud_probability to a near-binary value. This is the
+        # continuous value blended below; it is never binarized before the
+        # blend, only after, via xgboost_decision.
+        xgboost_probability = float(self.xgboost_model.predict_proba(frame)[0][1])
+        xgboost_decision = bool(xgboost_probability >= self.xgboost_decision_threshold)
 
+        # score_samples() is continuous (lower = more anomalous); predict()
+        # would only give the binary contamination-threshold outlier flag.
+        # Normalize using the training-fitted score_min/score_max bounds
+        # (see train_isolation_forest.py), clipped since a live transaction
+        # can fall outside that training-time range in either direction.
+        raw_if_score = float(self.isolation_forest_model.score_samples(frame)[0])
+        score_range = self.isolation_forest_score_max - self.isolation_forest_score_min
+        if score_range <= 0:
+            # Degenerate training distribution (every training score_samples
+            # value identical) - there's no real range to normalize against.
+            isolation_forest_score = 0.0
+        else:
+            isolation_forest_score = (self.isolation_forest_score_max - raw_if_score) / score_range
+            isolation_forest_score = max(0.0, min(1.0, isolation_forest_score))
+
+        # Continuous blend - fraud_probability is never built from a
+        # binarized XGBoost output.
         fraud_probability = (
-            XGBOOST_WEIGHT * xgboost_score + (1 - XGBOOST_WEIGHT) * isolation_forest_score
+            XGBOOST_WEIGHT * xgboost_probability + (1 - XGBOOST_WEIGHT) * isolation_forest_score
         )
 
         return {
             "fraud_probability": round(fraud_probability, 4),
+            # alert_tier (critical/high/medium/low, see tiers.py) is an
+            # OPERATIONAL policy threshold applied to the blended
+            # fraud_probability - deliberately a separate concept from
+            # xgboost_decision_threshold above, which is a MODEL VALIDATION
+            # threshold selected on XGBoost's own held-out split and applies
+            # only to the standalone xgboost_score. Conflating the two would
+            # let a change to one silently move the other.
             "alert_tier": tier_for_probability(fraud_probability),
-            "xgboost_score": round(xgboost_score, 4),
+            # Field name kept for Excel/Kafka/ksqlDB/dashboard compatibility;
+            # the value is now the real positive-class probability this
+            # field was always documented (docs/data_dictionary.md) as being.
+            "xgboost_score": round(xgboost_probability, 4),
+            "xgboost_decision": xgboost_decision,
+            "xgboost_decision_threshold": round(self.xgboost_decision_threshold, 4),
             "isolation_forest_score": round(isolation_forest_score, 4),
             "model_version": MODEL_VERSION,
         }

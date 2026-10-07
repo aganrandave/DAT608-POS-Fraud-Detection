@@ -18,6 +18,8 @@ class ScoreResponse(BaseModel):
     fraud_probability: float
     alert_tier: str
     xgboost_score: float
+    xgboost_decision: bool
+    xgboost_decision_threshold: float
     isolation_forest_score: float
     model_version: str
     scored_at: str
