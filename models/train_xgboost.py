@@ -55,7 +55,13 @@ from sklearn.model_selection import StratifiedKFold, train_test_split
 from xgboost import XGBClassifier
 
 from excel_reader import FEATURE_COLUMNS, load_approved_synthetic_rows, load_training_frame
-from mlflow_registry import EXPERIMENT_NAME, MODEL_NAME_XGBOOST, register_model
+from mlflow_registry import (
+    EXPERIMENT_NAME,
+    MODEL_NAME_XGBOOST,
+    XGBOOST_THRESHOLD_ARTIFACT,
+    log_sibling_artifact,
+    register_model,
+)
 
 N_SPLITS = 5
 
@@ -201,6 +207,19 @@ def train() -> XGBClassifier:
         mlflow.log_param("n_synthetic_rows_trained_on", n_synthetic_in_trainval)
         mlflow.log_param("decision_threshold", decision_threshold)
         mlflow.xgboost.log_model(model, artifact_path="xgboost_model")
+        # Package the validation-selected threshold WITH the model version,
+        # not just as a run param - scoring/scorer.py loads this file
+        # directly off the registered model so the deployed threshold can
+        # never silently drift from the one that run actually selected.
+        log_sibling_artifact(
+            {
+                "decision_threshold": decision_threshold,
+                "selected_on": "validation_split (X_val, held out from X_trainval)",
+                "selection_method": "argmax F1 over sklearn.metrics.precision_recall_curve",
+            },
+            XGBOOST_THRESHOLD_ARTIFACT,
+            artifact_path="xgboost_model",
+        )
 
         # Held-out test-set metrics, at both the default 0.5 threshold (for
         # comparability with earlier runs) and the tuned threshold above.

@@ -38,7 +38,13 @@ import pandas as pd  # noqa: E402
 from sklearn.ensemble import IsolationForest  # noqa: E402
 
 from excel_reader import FEATURE_COLUMNS, load_augmented_training_frame  # noqa: E402
-from mlflow_registry import EXPERIMENT_NAME, MODEL_NAME_ISOLATION_FOREST, register_model  # noqa: E402
+from mlflow_registry import (  # noqa: E402
+    EXPERIMENT_NAME,
+    ISOLATION_FOREST_BOUNDS_ARTIFACT,
+    MODEL_NAME_ISOLATION_FOREST,
+    log_sibling_artifact,
+    register_model,
+)
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "eda_output")
 
@@ -98,10 +104,32 @@ def train() -> IsolationForest:
 
         # Score the FULL dataset (including fraud rows) to evaluate against labels.
         scores = model.score_samples(df[FEATURE_COLUMNS])
+        score_min = float(np.min(scores))
+        score_max = float(np.max(scores))
         mlflow.log_metric("anomaly_score_mean", float(np.mean(scores)))
         mlflow.log_metric("anomaly_score_std", float(np.std(scores)))
-        mlflow.log_metric("anomaly_score_min", float(np.min(scores)))
-        mlflow.log_metric("anomaly_score_max", float(np.max(scores)))
+        mlflow.log_metric("anomaly_score_min", score_min)
+        mlflow.log_metric("anomaly_score_max", score_max)
+
+        # Package these same min/max bounds WITH the model version so
+        # scoring/scorer.py can reproducibly map a new score_samples() value
+        # into a 0-1 "fraudiness" score at serving time: fitted once here,
+        # not an arbitrary transform invented at scoring time. score_samples
+        # is lower for more anomalous rows (see save_anomaly_score_plot's
+        # axis label below), so a new score is normalized as
+        # (score_max - new_score) / (score_max - score_min), clipped to
+        # [0, 1] since a live transaction can fall outside this training
+        # range in either direction.
+        log_sibling_artifact(
+            {
+                "score_min": score_min,
+                "score_max": score_max,
+                "fitted_on": "score_samples() over the full training-time dataset (fraud + non-fraud)",
+                "convention": "lower score_samples = more anomalous",
+            },
+            ISOLATION_FOREST_BOUNDS_ARTIFACT,
+            artifact_path="isolation_forest_model",
+        )
 
         n_fraud = int(df["is_fraud"].sum())
         precision_top_k = precision_at_k(df["is_fraud"], scores, k=n_fraud)

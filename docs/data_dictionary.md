@@ -32,6 +32,8 @@ All persistent data lives in Git-tracked `.xlsx` workbooks under
 | geo_jump_km | float | Haversine distance (km) from this terminal's previous transaction |
 | bin_spend_rate | float | Rolling average spend for this card BIN over the trailing 1 hour |
 | terminal_reversal_count | float | Count of `fake_reversal`-flagged transactions on this terminal in the trailing 24 hours |
+| amount_ngn | float | Transaction amount in Nigerian Naira (joined in from `transactions_raw.xlsx`) |
+| amount_vs_bin_avg_ratio | float | `amount_ngn / bin_spend_rate`; 0 if `bin_spend_rate` is 0 (no history yet) |
 | timestamp | string (ISO 8601) | Feature computation time |
 
 ## `data/fraud_scores.xlsx`
@@ -41,10 +43,19 @@ All persistent data lives in Git-tracked `.xlsx` workbooks under
 | transaction_id | string (UUID) | Foreign key to `transactions_raw.xlsx` |
 | fraud_probability | float | Blended model output, 0-1 |
 | alert_tier | string | One of `low`, `medium`, `high`, `critical` |
-| xgboost_score | float | Raw XGBoost predicted probability |
+| xgboost_score | float | XGBoost's positive-class probability (`predict_proba`), 0-1 |
 | isolation_forest_score | float | Normalized Isolation Forest anomaly score, 0-1 |
 | model_version | string | Registered model version tag |
 | scored_at | string (ISO 8601) | Scoring time, UTC |
+
+The `/score` API response also includes `xgboost_decision` (bool) and
+`xgboost_decision_threshold` (float) - see
+[api_reference.md](api_reference.md). These are **not** persisted to this
+workbook; only the columns above are written by
+[`scoring/excel_writer.py`](../scoring/excel_writer.py), to avoid a header
+migration on an already-committed file. They are still published on the
+`pos-fraud-scores` Kafka topic alongside everything else, since
+`kafka_publisher.py` serializes the full response.
 
 ## `data/alerts.xlsx`
 

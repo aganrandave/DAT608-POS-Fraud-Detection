@@ -20,7 +20,71 @@ jobs:
       - name: Install lint and test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flake8 pytest openpyxl pandas mlflow filelock "kafka-python==2.0.2"
+          pip install flake8 pytest openpyxl "pandas==2.2.2" "mlflow==2.15.1" "sqlalchemy<2.1" filelock "kafka-python==2.0.2" "xgboost==3.2.0" "scikit-learn==1.9.0" "pydantic==2.13.4"
+          # sqlalchemy<2.1: mlflow==2.15.1 depends on sqlalchemy without an
+          # upper bound, and an unpinned `pip install` resolves the latest
+          # sqlalchemy (2.1.x), which removed a symbol
+          # (FallbackAsyncAdaptedQueuePool) mlflow 2.15.1's sqlite backend
+          # imports directly - breaks at import time with no mention of
+          # mlflow in the traceback. Found by actually reproducing this job
+          # in a clean venv, not reasoned about in the abstract. NOTE: this
+          # same unpinned exposure exists in models/requirements.txt and
+          # scoring/requirements.txt too (neither pins sqlalchemy) - out of
+          # this fix's scope to change, flagged here and in the closure
+          # report as a real, separate follow-up.
+          #
+          # pydantic: tests/unit/test_scorer.py imports scoring/schemas.py
+          # (to check scorer.score()'s output validates against the real
+          # FastAPI ScoreResponse model) which imports pydantic directly -
+          # found by actually reproducing this job in a clean venv, where it
+          # failed at collection with ModuleNotFoundError: no module named
+          # 'pydantic'. Pinned to match scoring/requirements.txt.
+          #
+          # xgboost/scikit-learn: both are imported directly in
+          # tests/unit/test_mlflow_registry.py and tests/unit/test_evaluate.py,
+          # which train tiny real XGBClassifier/IsolationForest models to
+          # verify the threshold/score-bounds artifact round trip and the
+          # leakage-audited evaluation path end-to-end - not just referenced
+          # by type. Confirmed `import mlflow.xgboost` / `import mlflow.sklearn`
+          # alone (as used in models/mlflow_registry.py) do NOT need these
+          # packages installed: a clean venv without either one imports and
+          # even calls mlflow.xgboost.load_model() fine, up to the point of
+          # actually needing to deserialize a real model - MLflow lazy-loads
+          # both libraries inside the relevant function bodies, not at import
+          # time. That said, the two pins are not equally load-bearing:
+          #   - xgboost has no other route into this dependency tree. Removing
+          #     it from this line and reinstalling in a clean venv reproduces
+          #     a clean `ModuleNotFoundError: No module named 'xgboost'` at
+          #     test collection - a real, confirmed failure.
+          #   - scikit-learn does NOT fail the same way if removed from this
+          #     line: mlflow==2.15.1 itself depends on scikit-learn (`pip show
+          #     mlflow` lists it under Requires), so pip installs some version
+          #     of it anyway to satisfy mlflow's own requirement - confirmed
+          #     in a clean venv built with scikit-learn omitted from the
+          #     install command, where `pip show scikit-learn` still showed
+          #     it present (Required-by: mlflow). The explicit
+          #     "scikit-learn==1.9.0" pin is kept here not because its absence
+          #     would break the import, but to pin the version actually used
+          #     to the same one models/requirements.txt pins, instead of
+          #     leaving it to whatever version mlflow's own unconstrained
+          #     dependency resolves to.
+          #
+          # mlflow/pandas pinned (previously left to float to "latest"):
+          # confirmed by reproducing this exact job in a clean venv that an
+          # unpinned `pip install mlflow` resolves to 3.x, which breaks
+          # tests/unit/test_mlflow_registry.py for a real reason, not a
+          # version-skew technicality - mlflow 3.x's register_model() no
+          # longer resolves a `runs:/{run_id}/{artifact_path}` URI to the
+          # same artifact root it logged the model under; it silently
+          # registers via an internal `models:/m-<hash>` "Logged Model"
+          # reference instead, so a sibling file logged alongside the model
+          # (this project's decision_threshold.json / score_bounds.json
+          # pattern - see models/README.md's Model contract section) is no
+          # longer retrievable at `models:/{name}/{stage}/{filename}`. This
+          # is the exact mlflow 3.x registry-API risk models/requirements.txt,
+          # scoring/requirements.txt, and docker-boot-verify.yml already pin
+          # mlflow==2.15.1 to avoid (see the deferred mlflow Dependabot PRs)
+          # - this CI job was the one place that pin was missing.
 
       - name: Run flake8
         run: flake8 --max-line-length=120 $(git ls-files '*.py')
