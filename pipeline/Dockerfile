@@ -6,7 +6,7 @@
 # to the actively-maintained official apache/spark:3.5.1-python3 image is
 # worth doing as a separate, deliberate change (different WORKDIR/user
 # layout, needs its own verification).
-FROM bitnamilegacy/spark:3.5.1
+FROM bitnamilegacy/spark:4.0.0
 
 WORKDIR /app
 
